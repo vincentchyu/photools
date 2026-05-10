@@ -1,4 +1,6 @@
-# photo-processing
+[简体中文](#photo-processing) | [English](#photo-processing-en)
+
+<h1 id="photo-processing">photo-processing</h1>
 
 这是一个面向摄影工作流的自动化处理工具集，目前提供两大核心功能：
 1. **GPS 修正 (`geotag`)**：在照片从相机同步到电脑后，结合移动设备导出的 `GPX` 轨迹，为照片批量补充写入 GPS 坐标。
@@ -220,3 +222,199 @@ go test ./...
 - 不以内嵌 EXIF 解析重写 `exiftool`
 
 如果后续要扩展新能力，请先阅读 [CORE_CONSTRAINTS.md](/Users/vincent/Pictures/GPS/CORE_CONSTRAINTS.md)。
+
+---
+
+<h1 id="photo-processing-en">photo-processing (English)</h1>
+
+This is an automated processing toolkit for photography workflows, currently providing two core functions:
+1. **GPS Correction (`geotag`)**: After syncing photos from camera to computer, batch write GPS information to photos using `GPX` tracks exported from mobile devices.
+2. **Photo Archive & Organization (`organize-by-date`)**: Automatically archive and rename photos and their companion files (RAW, JPG, XMP, etc.) based on the shooting date in the metadata.
+
+The project currently uses `Go CLI + exiftool`, focusing on "metadata enrichment and file organization after import," and does not intend to expand into a full DAM or post-processing system.
+
+![Processed track and photo effect](static/img.png)
+
+## Project Goals
+
+- Treat companion files with the same basename as a single "shooting unit" (at least `RAW + JPG`, plus `XMP`, `ACR`, `WAV`, etc.).
+- Use `RAW` as the authoritative source of metadata.
+- Match `GPX` tracks using the photo's `DateTimeOriginal + OffsetTimeOriginal`.
+- Write GPS to `RAW` first, then sync `GPS:all` to the same-named `JPG`, and to `XMP` if it exists.
+- Archive photos to `Processed/YYYY/MMDD/` based on the original shooting date.
+- All user-visible logs and output are unified in Chinese (technical labels remain English).
+
+## Directory Structure
+
+```text
+GPS/
+├── cmd/photools/          # Unified CLI entry
+├── internal/              # Internal core logic
+│   ├── exiftool/          # ExifTool interaction & metadata ops
+│   ├── geotag/            # GPS correction business logic
+│   └── organizer/         # Asset discovery & archive logic
+├── Inbox/                 # Pending photos from camera
+├── GPX/                   # Track files from mobile devices
+├── Processed/             # Photos archived by date
+├── Logs/                  # Chinese logs
+└── CORE_CONSTRAINTS.md    # Core project constraints
+```
+
+## Requirements
+
+- Go `1.26.2`
+- [ExifTool](https://exiftool.org/)
+
+Verify commands:
+
+```bash
+go version
+exiftool -ver
+```
+
+## Usage
+
+### 1. Prepare Directories
+
+- Place pending photos in `Inbox/`
+- Place track files in `GPX/`
+
+The tool uses the base directory by default:
+
+```text
+$HOME/Pictures/GPS
+```
+
+### 2. Execution
+
+Default run:
+
+```bash
+go run ./cmd/photools geotag
+```
+
+Organize specific directory by date:
+
+```bash
+go run ./cmd/photools organize-by-date -source-dir /path/to/source -target-dir /path/to/output
+```
+
+Specify base directory:
+
+```bash
+go run ./cmd/photools geotag -base-dir /Users/username/Pictures/GPS
+```
+
+Specify time offset:
+
+```bash
+go run ./cmd/photools geotag -geosync +00:00:05
+```
+
+Specify RAW extensions:
+
+```bash
+go run ./cmd/photools geotag -raw-exts nef,cr3,arw,dng
+```
+
+Specify concurrent workers:
+
+```bash
+go run ./cmd/photools geotag -workers 4
+```
+
+## Processing Rules
+
+### Pairing Rules
+
+- Files with the same basename are identified as one shooting unit.
+- `RAW + JPG` is the minimum core combination for the GPS correction process.
+- If `RAW` is missing its `JPG`, the task records "waiting for JPG" and won't archive early.
+- If `JPG` is missing its `RAW`, the task is skipped (not processed alone).
+- Companion files (XMP, ACR, WAV, etc.) move with the primary files.
+
+### Concurrency Rules
+
+- Asset groups in `Inbox` are processed concurrently by basename.
+- The unit of concurrency is the "shooting unit," not individual files.
+- Order within a unit is fixed: `RAW` -> `JPG` -> `XMP` -> Archive.
+- Concurrent workers can be controlled via `-workers` (default is CPU core count).
+
+### Time & GPS Rules
+
+- Trust `DateTimeOriginal` and `OffsetTimeOriginal` by default.
+- Default `geosync=0`.
+- Camera clock drift can be compensated using `-geosync`.
+- Multiple `GPX` files are passed to `exiftool` individually.
+
+### Writing & Validation Rules
+
+- GPS is written to `RAW` first.
+- The tool validates `GPSPosition` presence after the command finishes.
+- After `RAW` success, sync `GPS:all` to `JPG`.
+- If `XMP` exists, sync GPS to `XMP` as well.
+- Re-validate `JPG` and `XMP` after syncing.
+- Photos outside track ranges stay in `Inbox/` and aren't archived.
+
+### Archive & Normalization Rules
+
+After successful processing, files are renamed and archived to `Processed/YYYY/MMDD/`.
+
+Renaming automatically inserts `YYYY-MM-DD` before the original number. Extensions typically remain unchanged (subject to specific action).
+
+**Archive Example:**
+
+If `Inbox/` has two units shot on `2025-10-06`, after processing:
+
+```text
+Processed/
+└── 2025/
+    └── 1006/
+        ├── DSC_2025-10-06_1010.NEF       # Primary RAW
+        ├── DSC_2025-10-06_1010.JPG       # Synced JPG
+        ├── DSC_2025-10-06_1010.xmp       # Sidecar XMP
+        ├── DSC_2025-10-06_1011_edit.NEF  # Custom suffix
+        └── DSC_2025-10-06_1011_edit.JPG
+```
+
+### Independent Organization Command
+
+- `organize-by-date` is an independent subcommand.
+- It scans `-source-dir` and groups by basename.
+- Attempts to find a `DateTimeOriginal` anchor in the group.
+- Moves the entire group to `-target-dir/YYYY/MMDD/`.
+- Processed sequentially (no concurrency for this command).
+
+## Logs
+
+Log paths:
+
+```text
+Logs/geotag.log
+Logs/inbox_pending_report_latest.md
+```
+
+Organization command logs:
+
+```text
+<target-dir>/_organize_logs/organize_by_date.log
+<target-dir>/_organize_logs/organize_pending_report_latest.md
+```
+
+## Testing
+
+Run tests:
+
+```bash
+go test ./...
+```
+
+## Design Boundaries
+
+This project explicitly DOES NOT:
+
+- Serve as a full DAM system.
+- Treat `JPG` as an authoritative source alongside `RAW`.
+- Re-implement EXIF writing (uses `exiftool`).
+
+Read [CORE_CONSTRAINTS.md](./CORE_CONSTRAINTS.md) for further development.
