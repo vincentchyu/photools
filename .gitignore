@@ -1,5 +1,10 @@
-/.gocache/
-/Processed/
 /Inbox/
 /GPX/
 /Logs/
+/Processed/
+/.gocache/
+dist/
+/.agents/
+/test/
+/macos/
+/.codex/

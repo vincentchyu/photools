@@ -1,0 +1,110 @@
+package engine
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestArchiver_CalculateNormalizedName(t *testing.T) {
+	archiver := &Archiver{}
+
+	tests := []struct {
+		name     string
+		oldBase  string
+		dateTime string
+		expected string
+	}{
+		{
+			name:     "标准相机编号 DSC_1010",
+			oldBase:  "DSC_1010",
+			dateTime: "2025:10:06 14:30:00",
+			expected: "DSC_2025-10-06_1010",
+		},
+		{
+			name:     "带后缀编号 DSC_1011_edit",
+			oldBase:  "DSC_1011_edit",
+			dateTime: "2025:10:06 14:31:00",
+			expected: "DSC_2025-10-06_1011_edit",
+		},
+		{
+			name:     "非 DSC 前缀的纯数字 00123",
+			oldBase:  "00123",
+			dateTime: "2026:01:01 09:00:00",
+			expected: "DSC_2026-01-01_00123",
+		},
+		{
+			name:     "已经是规范格式 DSC_2025-10-06_1010",
+			oldBase:  "DSC_2025-10-06_1010",
+			dateTime: "2025:10:06 14:30:00",
+			expected: "DSC_2025-10-06_1010",
+		},
+		{
+			name:     "无效日期时保留原名",
+			oldBase:  "DSC_1010",
+			dateTime: "invalid-date",
+			expected: "DSC_1010",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := archiver.CalculateNormalizedName(tt.oldBase, tt.dateTime)
+			if actual != tt.expected {
+				t.Errorf("CalculateNormalizedName(%q, %q) = %q; 期望 %q", tt.oldBase, tt.dateTime, actual, tt.expected)
+			}
+		})
+	}
+}
+
+func TestArchiver_BuildArchiveDir(t *testing.T) {
+	archiver := &Archiver{}
+	base := "/tmp/Processed"
+
+	dir, err := archiver.BuildArchiveDir(base, "2025:10:06 14:30:00")
+	if err != nil {
+		t.Fatalf("BuildArchiveDir 失败: %v", err)
+	}
+
+	expected := filepath.Join(base, "2025", "1006")
+	if dir != expected {
+		t.Errorf("BuildArchiveDir = %q; 期望 %q", dir, expected)
+	}
+}
+
+func TestArchiver_MoveAssetWithRename(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "Inbox")
+	targetDir := filepath.Join(tempDir, "Processed", "2025", "1006")
+
+	_ = os.MkdirAll(sourceDir, 0o755)
+	_ = os.MkdirAll(targetDir, 0o755)
+
+	raw := filepath.Join(sourceDir, "DSC_1010.NEF")
+	jpg := filepath.Join(sourceDir, "DSC_1010.JPG")
+	xmp := filepath.Join(sourceDir, "DSC_1010.xmp")
+
+	_ = os.WriteFile(raw, []byte("raw"), 0o644)
+	_ = os.WriteFile(jpg, []byte("jpg"), 0o644)
+	_ = os.WriteFile(xmp, []byte("xmp"), 0o644)
+
+	archiver := &Archiver{}
+	err := archiver.MoveFilesWithRename([]string{raw, jpg, xmp}, targetDir, "DSC_2025-10-06_1010")
+	if err != nil {
+		t.Fatalf("MoveFilesWithRename 失败: %v", err)
+	}
+
+	// 验证源文件已移动，目标文件存在
+	if _, err := os.Stat(raw); !os.IsNotExist(err) {
+		t.Errorf("源 RAW 文件未被移动")
+	}
+	if _, err := os.Stat(filepath.Join(targetDir, "DSC_2025-10-06_1010.nef")); err != nil {
+		t.Errorf("目标 RAW 文件不存在: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(targetDir, "DSC_2025-10-06_1010.jpg")); err != nil {
+		t.Errorf("目标 JPG 文件不存在: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(targetDir, "DSC_2025-10-06_1010.xmp")); err != nil {
+		t.Errorf("目标 XMP 文件不存在: %v", err)
+	}
+}

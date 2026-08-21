@@ -7,14 +7,11 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/vincentchyu/photo-processing/internal/domain"
 )
 
-type Metadata struct {
-	DateTimeOriginal   string `json:"DateTimeOriginal"`
-	OffsetTimeOriginal string `json:"OffsetTimeOriginal"`
-	GPSPosition        string `json:"GPSPosition"`
-	GPSDateTime        string `json:"GPSDateTime"`
-}
+type Metadata = domain.Metadata
 
 type CommandRunner interface {
 	CombinedOutput(name string, args ...string) ([]byte, error)

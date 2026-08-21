@@ -24,6 +24,7 @@
 ```text
 GPS/
 ├── cmd/photools/          # 统一 CLI 工具入口
+├── macos/PhotoToolsApp/   # Mac 原生 SwiftUI 工作台
 ├── internal/              # 内部核心逻辑
 │   ├── exiftool/          # ExifTool 交互与元数据操作
 │   ├── geotag/            # GPS 修正业务逻辑
@@ -55,48 +56,58 @@ exiftool -ver
 - 把轨迹文件放进 `GPX/`
 
 工具默认使用基础目录：
-
 ```text
 $HOME/Pictures/GPS
 ```
 
-### 2. 执行处理
+---
 
-默认运行：
+### 2. 交互式 TUI 终端工作台（🌟 强烈推荐）
 
+直接在终端运行（无需记复杂参数）：
 ```bash
-go run ./cmd/photools geotag
+go run ./cmd/photools
+```
+或显式进入 TUI：
+```bash
+go run ./cmd/photools tui
+```
+- **向导式主菜单**：一键切换 GPS 修正与归档、按日期归档整理、资产预检体检；
+- **Dry-Run 预检清单**：执行前评估配对情况、GPX 覆盖范围、潜在冲突与预警；
+- **实时流水线看板**：双栏显示执行阶段进度条、当前处理资产及滚动中文日志；
+- **交互式异常结算**：就地排查未匹配项（如缺少配对 JPG、GPX 时间断层）与解决建议。
+
+---
+
+### 3. Mac 原生图形工作台
+
+轻量 SwiftUI 原生应用，用于可视化查看 `Inbox/GPX/Processed/Logs` 状态：
+```bash
+./script/build_and_run.sh
 ```
 
-按拍摄日期整理指定目录：
+---
 
-```bash
-go run ./cmd/photools organize-by-date -source-dir /path/to/source -target-dir /path/to/output
-```
+### 4. 命令行（CLI）脚本模式
 
-指定基础目录：
+适合 CI、定时脚本或喜欢原生参数调用的场景：
 
-```bash
-go run ./cmd/photools geotag -base-dir /Users/你的用户名/Pictures/GPS
-```
-
-指定时间偏移：
-
-```bash
-go run ./cmd/photools geotag -geosync +00:00:05
-```
-
-指定 RAW 扩展名集合：
-
-```bash
-go run ./cmd/photools geotag -raw-exts nef,cr3,arw,dng
-```
-
-指定并发处理数：
-
-```bash
-go run ./cmd/photools geotag -workers 4
-```
+- **标准 GPS 修正**：
+  ```bash
+  go run ./cmd/photools geotag
+  ```
+- **指定时间偏移**：
+  ```bash
+  go run ./cmd/photools geotag -geosync +00:00:05
+  ```
+- **指定基础目录与并发数**：
+  ```bash
+  go run ./cmd/photools geotag -base-dir /path/to/GPS -workers 8
+  ```
+- **按拍摄日期整理指定目录**：
+  ```bash
+  go run ./cmd/photools organize-by-date -source-dir /path/to/source -target-dir /path/to/output
+  ```
 
 ## 当前处理规则
 
@@ -249,6 +260,7 @@ The project currently uses `Go CLI + exiftool`, focusing on "metadata enrichment
 ```text
 GPS/
 ├── cmd/photools/          # Unified CLI entry
+├── macos/PhotoToolsApp/   # Native Mac SwiftUI workbench
 ├── internal/              # Internal core logic
 │   ├── exiftool/          # ExifTool interaction & metadata ops
 │   ├── geotag/            # GPS correction business logic
@@ -321,6 +333,22 @@ Specify concurrent workers:
 
 ```bash
 go run ./cmd/photools geotag -workers 4
+```
+
+### 3. Mac Workbench
+
+The project also includes a thin SwiftUI workbench for a friendlier local workflow. It displays `Inbox/GPX/Processed/Logs` status, starts `geotag`, and shows live logs plus the pending report. It does not rewrite GPS logic; it still calls `photools geotag` underneath.
+
+Launch the local workbench:
+
+```bash
+./script/build_and_run.sh
+```
+
+Verify that the app builds and starts:
+
+```bash
+./script/build_and_run.sh --verify
 ```
 
 ## Processing Rules
