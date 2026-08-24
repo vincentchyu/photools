@@ -8,3 +8,8 @@ dist/
 /test/
 /macos/
 /.codex/
+
+# 地理本地字典数据（屏蔽庞大 JSON 字典，可通过 Python 脚本本地生成）
+/internal/geodata/data/
+
+

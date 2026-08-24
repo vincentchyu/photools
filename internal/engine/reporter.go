@@ -35,8 +35,8 @@ func (r *Reporter) WriteMarkdownReport(filePath, taskName string, issues []domai
 		return os.WriteFile(filePath, buf.Bytes(), 0o644)
 	}
 
-	buf.WriteString("| 序号 | 资产名称 | 拍摄时间 (时区) | 待补/失败原因 | 建议解决动作 |\n")
-	buf.WriteString("| :--- | :--- | :--- | :--- | :--- |\n")
+	buf.WriteString("| 序号 | 资产名称 | 拍摄时间 (时区) | 阻断阶段 | 待补/失败原因 | 建议解决动作 |\n")
+	buf.WriteString("| :--- | :--- | :--- | :--- | :--- | :--- |\n")
 
 	for i, issue := range issues {
 		timeStr := issue.PhotoTime
@@ -47,8 +47,13 @@ func (r *Reporter) WriteMarkdownReport(filePath, taskName string, issues []domai
 			timeStr = "未知"
 		}
 
+		stageStr := issue.FailedStage
+		if stageStr == "" {
+			stageStr = "执行阶段"
+		}
+
 		name := issue.Asset.DisplayName()
-		buf.WriteString(fmt.Sprintf("| %d | `%s` | %s | %s | %s |\n", i+1, name, timeStr, issue.Reason, issue.Suggestion))
+		buf.WriteString(fmt.Sprintf("| %d | `%s` | %s | %s | %s | %s |\n", i+1, name, timeStr, stageStr, issue.Reason, issue.Suggestion))
 	}
 
 	buf.WriteString("\n## 详细清单\n\n")
@@ -67,6 +72,15 @@ func (r *Reporter) WriteMarkdownReport(filePath, taskName string, issues []domai
 				compNames = append(compNames, filepath.Base(cp))
 			}
 			buf.WriteString(fmt.Sprintf("- **附属文件**: %s\n", strings.Join(compNames, ", ")))
+		}
+		if issue.FailedStage != "" {
+			buf.WriteString(fmt.Sprintf("- **中断阶段**: %s\n", issue.FailedStage))
+		}
+		if len(issue.BlockedStages) > 0 {
+			buf.WriteString(fmt.Sprintf("- **受影响跳过阶段**: %s\n", strings.Join(issue.BlockedStages, " ➔ ")))
+		}
+		if issue.CurrentStatus != "" {
+			buf.WriteString(fmt.Sprintf("- **物理文件状态**: %s\n", issue.CurrentStatus))
 		}
 		buf.WriteString(fmt.Sprintf("- **原因说明**: %s\n", issue.Reason))
 		buf.WriteString(fmt.Sprintf("- **建议动作**: %s\n", issue.Suggestion))

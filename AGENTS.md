@@ -1,13 +1,7 @@
 # AI Agent Instructions
 
-This repository contains a persistent AI memory file.
+This repository maintains a single source of truth for persistent AI memory, architecture constraints, and plugin development SOP:
 
-Before answering any question or modifying code,
-the AI MUST read the following file:
+- **[`./GEMINI.md`](./GEMINI.md)** (📸 PhotoTools 核心架构规约、开发纪律与插件 SOP)
 
-- ./CORE_CONSTRAINTS.md
-
-This file contains the long-term architecture memory,
-coding conventions, and database design rules.
-
-Always treat README.md as SYSTEM CONTEXT.
+Before answering questions, refactoring code, or extending capabilities, the AI **MUST** read and strictly follow `./GEMINI.md`.

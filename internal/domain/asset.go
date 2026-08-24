@@ -15,16 +15,22 @@ type AssetGroup struct {
 	CompanionPaths []string `json:"companion_paths,omitempty"`
 }
 
-// AllFiles 返回该资产组中的所有物理文件路径
+// AllFiles 返回该资产组中的所有物理文件路径（去重保序）
 func (a AssetGroup) AllFiles() []string {
-	files := make([]string, 0, 2+len(a.CompanionPaths))
-	if a.RawPath != "" {
-		files = append(files, a.RawPath)
+	seen := make(map[string]bool)
+	files := make([]string, 0, 3+len(a.CompanionPaths))
+	add := func(p string) {
+		if p != "" && !seen[p] {
+			seen[p] = true
+			files = append(files, p)
+		}
 	}
-	if a.JPGPath != "" {
-		files = append(files, a.JPGPath)
+	add(a.RawPath)
+	add(a.JPGPath)
+	add(a.XMPPath)
+	for _, cp := range a.CompanionPaths {
+		add(cp)
 	}
-	files = append(files, a.CompanionPaths...)
 	return files
 }
 
@@ -38,6 +44,11 @@ func (a AssetGroup) HasJPG() bool {
 	return a.JPGPath != ""
 }
 
+// HasXMP 是否包含 XMP 侧车文件
+func (a AssetGroup) HasXMP() bool {
+	return a.XMPPath != ""
+}
+
 // IsPaired 是否具备 RAW + JPG 的最小核心配对
 func (a AssetGroup) IsPaired() bool {
 	return a.HasRaw() && a.HasJPG()
@@ -49,6 +60,28 @@ func (a AssetGroup) SortedCompanions() []string {
 	copy(cp, a.CompanionPaths)
 	sort.Strings(cp)
 	return cp
+}
+
+// HasPrimary 是否包含可决策的主媒体文件 (RAW 或 JPG)
+func (a AssetGroup) HasPrimary() bool {
+	return a.PrimaryPath() != ""
+}
+
+// PrimaryPath 返回主媒体文件路径（RAW 优先，若无 RAW 则以 JPG 为主文件）
+func (a AssetGroup) PrimaryPath() string {
+	if a.RawPath != "" {
+		return a.RawPath
+	}
+	if a.JPGPath != "" {
+		return a.JPGPath
+	}
+	if a.XMPPath != "" {
+		return a.XMPPath
+	}
+	if len(a.CompanionPaths) > 0 {
+		return a.CompanionPaths[0]
+	}
+	return ""
 }
 
 // DisplayName 返回用于展示的友好名称

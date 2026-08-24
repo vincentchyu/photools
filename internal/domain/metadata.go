@@ -2,6 +2,7 @@ package domain
 
 // Metadata 封装由 ExifTool 提取的拍摄元数据
 type Metadata struct {
+	SourceFile         string `json:"SourceFile,omitempty"`
 	DateTimeOriginal   string `json:"DateTimeOriginal"`
 	OffsetTimeOriginal string `json:"OffsetTimeOriginal"`
 	GPSPosition        string `json:"GPSPosition"`

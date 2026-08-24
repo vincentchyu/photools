@@ -19,6 +19,7 @@ const (
 	StageDiscover PipelineStage = "扫描资产"
 	StagePrecheck PipelineStage = "预检校验"
 	StageGeotag   PipelineStage = "写入GPS"
+	StageGeocode  PipelineStage = "逆地理编码"
 	StageSync     PipelineStage = "同步附属文件"
 	StageArchive  PipelineStage = "归档重命名"
 	StageComplete PipelineStage = "任务完成"

@@ -20,6 +20,9 @@ type Issue struct {
 	PhotoTime          string     `json:"photo_time,omitempty"`
 	PhotoOffset        string     `json:"photo_offset,omitempty"`
 	ReferencedGPXFiles []string   `json:"referenced_gpx_files,omitempty"`
+	FailedStage        string     `json:"failed_stage,omitempty"`   // 发生故障的初始阶段
+	BlockedStages      []string   `json:"blocked_stages,omitempty"` // 因而被安全熔断跳过的后续阶段列表
+	CurrentStatus      string     `json:"current_status,omitempty"` // 资产物理文件当前存放状态
 }
 
 // TaskSummary 汇总任务运行结算指标

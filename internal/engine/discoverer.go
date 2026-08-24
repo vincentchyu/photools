@@ -26,6 +26,19 @@ func NewDiscoverer(rawExts []string) *Discoverer {
 	return &Discoverer{rawExtensions: rawMap}
 }
 
+// 忽略的非摄影/文档/日志等文件扩展名（不作为伴随文件与独立资产处理）
+var ignoredDocExtensions = map[string]struct{}{
+	"md": {}, "log": {}, "txt": {}, "json": {}, "yaml": {}, "yml": {},
+	"csv": {}, "pdf": {}, "doc": {}, "docx": {}, "zip": {}, "tar": {},
+	"gz": {}, "7z": {}, "rar": {}, "bak": {}, "tmp": {}, "ds_store": {},
+	"toml": {}, "sh": {}, "bat": {},
+}
+
+func isIgnoredDocExt(ext string) bool {
+	_, ok := ignoredDocExtensions[strings.ToLower(ext)]
+	return ok
+}
+
 // Discover 递归扫描 sourceDir 并返回按目录和 BaseName 排序的 AssetGroup
 func (d *Discoverer) Discover(sourceDir string) ([]domain.AssetGroup, error) {
 	groups := map[string]*domain.AssetGroup{}
@@ -49,6 +62,10 @@ func (d *Discoverer) Discover(sourceDir string) ([]domain.AssetGroup, error) {
 			}
 
 			ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(entry.Name()), "."))
+			if isIgnoredDocExt(ext) {
+				return nil
+			}
+
 			baseName := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
 			dir := filepath.Dir(path)
 			key := dir + "::" + strings.ToLower(baseName)
@@ -82,6 +99,10 @@ func (d *Discoverer) Discover(sourceDir string) ([]domain.AssetGroup, error) {
 
 	var assets []domain.AssetGroup
 	for _, group := range groups {
+		// 摄影资产必须至少包含 RAW 或 JPG 主文件
+		if !group.HasRaw() && !group.HasJPG() {
+			continue
+		}
 		assets = append(assets, *group)
 	}
 
@@ -104,4 +125,24 @@ func (d *Discoverer) Discover(sourceDir string) ([]domain.AssetGroup, error) {
 func (d *Discoverer) isRawExt(ext string) bool {
 	_, ok := d.rawExtensions[strings.ToLower(ext)]
 	return ok
+}
+
+// ListGPXFiles 扫描指定目录下的全部 .gpx 轨迹文件
+func ListGPXFiles(gpxDir string) ([]string, error) {
+	var entries []string
+	err := filepath.WalkDir(
+		gpxDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			if strings.EqualFold(filepath.Ext(d.Name()), ".gpx") {
+				entries = append(entries, path)
+			}
+			return nil
+		},
+	)
+	return entries, err
 }

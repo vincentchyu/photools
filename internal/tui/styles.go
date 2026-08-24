@@ -9,10 +9,12 @@ var (
 	SuccessColor    = lipgloss.AdaptiveColor{Light: "#059669", Dark: "#34D399"} // 绿
 	WarningColor    = lipgloss.AdaptiveColor{Light: "#D97706", Dark: "#FBBF24"} // 橙
 	DangerColor     = lipgloss.AdaptiveColor{Light: "#DC2626", Dark: "#F87171"} // 红
+	ErrorColor      = DangerColor
 	TextColor       = lipgloss.AdaptiveColor{Light: "#111827", Dark: "#F9FAFB"} // 正文文字（浅底深字，深底白字）
 	MutedTextColor  = lipgloss.AdaptiveColor{Light: "#4B5563", Dark: "#9CA3AF"} // 次级说明文字
 	ActiveBgColor   = lipgloss.AdaptiveColor{Light: "#312E81", Dark: "#3730A3"} // 选中高亮背景
 	CardBorderColor = lipgloss.AdaptiveColor{Light: "#6366F1", Dark: "#6366F1"} // 边框
+	HighlightColor  = lipgloss.AdaptiveColor{Light: "#0284C7", Dark: "#38BDF8"} // 强调高亮色
 )
 
 // 样式定义
@@ -31,6 +33,11 @@ var (
 
 	// 卡片与面板样式
 	PanelStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(CardBorderColor).
+			Padding(0, 1)
+
+	LogBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(CardBorderColor).
 			Padding(0, 1)
@@ -74,6 +81,12 @@ var (
 	BadgeInfo = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FFFFFF")).
 			Background(lipgloss.Color("#0284C7")).
+			Padding(0, 1).
+			Bold(true)
+
+	BadgeParam = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FCD34D")).
+			Background(lipgloss.Color("#1E293B")).
 			Padding(0, 1).
 			Bold(true)
 

@@ -7,12 +7,13 @@ import (
 )
 
 func TestArchiver_CalculateNormalizedName(t *testing.T) {
-	archiver := &Archiver{}
+	archiver := NewArchiver()
 
 	tests := []struct {
 		name     string
 		oldBase  string
 		dateTime string
+		template string
 		expected string
 	}{
 		{
@@ -20,6 +21,36 @@ func TestArchiver_CalculateNormalizedName(t *testing.T) {
 			oldBase:  "DSC_1010",
 			dateTime: "2025:10:06 14:30:00",
 			expected: "DSC_2025-10-06_1010",
+		},
+		{
+			name:     "AdobeRGB 前缀 _DSC1010",
+			oldBase:  "_DSC1010",
+			dateTime: "2025:10:06 14:30:00",
+			expected: "_DSC_2025-10-06_1010",
+		},
+		{
+			name:     "佳能前缀 IMG_2020",
+			oldBase:  "IMG_2020",
+			dateTime: "2025:10:06 14:30:00",
+			expected: "IMG_2025-10-06_2020",
+		},
+		{
+			name:     "佳能 AdobeRGB 前缀 _MG_2020",
+			oldBase:  "_MG_2020",
+			dateTime: "2025:10:06 14:30:00",
+			expected: "_MG_2025-10-06_2020",
+		},
+		{
+			name:     "索尼机身前缀 ILCE_9988",
+			oldBase:  "ILCE_9988",
+			dateTime: "2025:10:06 14:30:00",
+			expected: "ILCE_2025-10-06_9988",
+		},
+		{
+			name:     "松下前缀 P1010001",
+			oldBase:  "P1010001",
+			dateTime: "2025:10:06 14:30:00",
+			expected: "P_2025-10-06_1010001",
 		},
 		{
 			name:     "带后缀编号 DSC_1011_edit",
@@ -40,16 +71,33 @@ func TestArchiver_CalculateNormalizedName(t *testing.T) {
 			expected: "DSC_2025-10-06_1010",
 		},
 		{
+			name:     "已经是规范格式（带其他前缀）IMG_2025-10-06_1010",
+			oldBase:  "IMG_2025-10-06_1010",
+			dateTime: "2025:10:06 14:30:00",
+			expected: "IMG_2025-10-06_1010",
+		},
+		{
 			name:     "无效日期时保留原名",
 			oldBase:  "DSC_1010",
 			dateTime: "invalid-date",
 			expected: "DSC_1010",
 		},
+		{
+			name:     "自定义命名模板 {YYYY}{MM}{DD}_{PREFIX}_{SEQ}{SUFFIX}",
+			oldBase:  "IMG_8888_raw",
+			dateTime: "2025:10:06 14:30:00",
+			template: "{YYYY}{MM}{DD}_{PREFIX}_{SEQ}{SUFFIX}",
+			expected: "20251006_IMG_8888_raw",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := archiver.CalculateNormalizedName(tt.oldBase, tt.dateTime)
+			a := archiver
+			if tt.template != "" {
+				a = NewArchiver(tt.template)
+			}
+			actual := a.CalculateNormalizedName(tt.oldBase, tt.dateTime)
 			if actual != tt.expected {
 				t.Errorf("CalculateNormalizedName(%q, %q) = %q; 期望 %q", tt.oldBase, tt.dateTime, actual, tt.expected)
 			}
@@ -58,7 +106,7 @@ func TestArchiver_CalculateNormalizedName(t *testing.T) {
 }
 
 func TestArchiver_BuildArchiveDir(t *testing.T) {
-	archiver := &Archiver{}
+	archiver := NewArchiver()
 	base := "/tmp/Processed"
 
 	dir, err := archiver.BuildArchiveDir(base, "2025:10:06 14:30:00")
@@ -88,7 +136,7 @@ func TestArchiver_MoveAssetWithRename(t *testing.T) {
 	_ = os.WriteFile(jpg, []byte("jpg"), 0o644)
 	_ = os.WriteFile(xmp, []byte("xmp"), 0o644)
 
-	archiver := &Archiver{}
+	archiver := NewArchiver()
 	err := archiver.MoveFilesWithRename([]string{raw, jpg, xmp}, targetDir, "DSC_2025-10-06_1010")
 	if err != nil {
 		t.Fatalf("MoveFilesWithRename 失败: %v", err)

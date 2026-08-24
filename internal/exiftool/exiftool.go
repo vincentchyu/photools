@@ -6,7 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/vincentchyu/photo-processing/internal/domain"
 )
@@ -23,20 +28,156 @@ func (ExecRunner) CombinedOutput(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).CombinedOutput()
 }
 
+// ReadMetadata 读取照片的基础 EXIF 元数据
 func ReadMetadata(runner CommandRunner, path string) (Metadata, error) {
 	output, err := runner.CombinedOutput(
-		"exiftool", "-json", "-DateTimeOriginal", "-OffsetTimeOriginal", "-GPSPosition", "-GPSDateTime", path,
+		"exiftool", "-m", "-q", "-json", "-DateTimeOriginal", "-OffsetTimeOriginal", "-GPSPosition", "-GPSDateTime",
+		path,
 	)
+	if len(output) > 0 {
+		if meta, parseErr := ParseMetadataJSON(output); parseErr == nil {
+			return meta, nil
+		}
+	}
 	if err != nil {
 		return Metadata{}, fmt.Errorf("exiftool 读取元数据失败: %w", err)
 	}
 	return ParseMetadataJSON(output)
 }
 
-func ParseMetadataJSON(output []byte) (Metadata, error) {
+// ReadBatchMetadataMap 批量读取多个照片文件的元数据，返回以规范化路径为 key 的映射
+func ReadBatchMetadataMap(runner CommandRunner, paths []string) (map[string]Metadata, error) {
+	return ReadBatchMetadataMapConcurrent(runner, paths, 8, nil)
+}
+
+// ReadBatchMetadataMapConcurrent 并发分批读取多个照片文件的元数据，支持多 Worker 并行与进度实时回调
+func ReadBatchMetadataMapConcurrent(
+	runner CommandRunner, paths []string, concurrency int, onProgress func(processed, total int),
+) (map[string]Metadata, error) {
+	if len(paths) == 0 {
+		return map[string]Metadata{}, nil
+	}
+
+	if concurrency <= 0 {
+		concurrency = 8
+	}
+
+	const batchSize = 250
+	type batchChunk struct {
+		chunk []string
+	}
+
+	var chunks []batchChunk
+	for i := 0; i < len(paths); i += batchSize {
+		end := i + batchSize
+		if end > len(paths) {
+			end = len(paths)
+		}
+		chunks = append(chunks, batchChunk{chunk: paths[i:end]})
+	}
+
+	var mu sync.Mutex
+	result := make(map[string]Metadata, len(paths))
+	var processedCount atomic.Int64
+	total := len(paths)
+
+	var wg sync.WaitGroup
+	chunkChan := make(chan batchChunk, len(chunks))
+	for _, c := range chunks {
+		chunkChan <- c
+	}
+	close(chunkChan)
+
+	actualWorkers := concurrency
+	if actualWorkers > len(chunks) {
+		actualWorkers = len(chunks)
+	}
+
+	for w := 0; w < actualWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for item := range chunkChan {
+				args := []string{
+					"-m", "-q", "-json", "-DateTimeOriginal", "-OffsetTimeOriginal", "-GPSPosition", "-GPSDateTime",
+				}
+				args = append(args, item.chunk...)
+
+				output, _ := runner.CombinedOutput("exiftool", args...)
+				if len(output) > 0 {
+					records, parseErr := ParseBatchMetadataJSON(output)
+					if parseErr == nil && len(records) > 0 {
+						mu.Lock()
+						for idx, rec := range records {
+							filePath := rec.SourceFile
+							if filePath == "" && idx < len(item.chunk) {
+								filePath = item.chunk[idx]
+							}
+							if filePath != "" {
+								cleanPath := filepath.Clean(filePath)
+								result[cleanPath] = rec
+								if abs, err := filepath.Abs(filePath); err == nil {
+									result[abs] = rec
+								}
+							}
+						}
+						mu.Unlock()
+					}
+				}
+
+				done := int(processedCount.Add(int64(len(item.chunk))))
+				if onProgress != nil {
+					if done > total {
+						done = total
+					}
+					onProgress(done, total)
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	return result, nil
+}
+
+// ParseBatchMetadataJSON 解析 exiftool -json 多文件输出（允许空数组返回空切片，且自动容错剥离 Warning 文本）
+func ParseBatchMetadataJSON(output []byte) ([]Metadata, error) {
+	cleanOutput := bytes.TrimSpace(output)
+	if len(cleanOutput) == 0 {
+		return nil, nil
+	}
+
+	// 自动容错剥离 ExifTool 输出前面的 Warning 或非 JSON 前缀
+	// 需精准找到后面紧随 '{' 或 ']' 的有效 JSON 数组 '['
+	jsonStart := -1
+	for i := 0; i < len(cleanOutput); i++ {
+		if cleanOutput[i] == '[' {
+			rest := bytes.TrimSpace(cleanOutput[i+1:])
+			if len(rest) > 0 && (rest[0] == '{' || rest[0] == ']') {
+				jsonStart = i
+				break
+			}
+		}
+	}
+
+	if jsonStart >= 0 {
+		if end := bytes.LastIndexByte(cleanOutput, ']'); end > jsonStart {
+			cleanOutput = cleanOutput[jsonStart : end+1]
+		}
+	}
+
 	var records []Metadata
-	if err := json.Unmarshal(output, &records); err != nil {
-		return Metadata{}, fmt.Errorf("解析 exiftool 输出失败: %w", err)
+	if err := json.Unmarshal(cleanOutput, &records); err != nil {
+		return nil, fmt.Errorf("解析 exiftool 批量输出失败: %w (原始输出: %s)", err, string(bytes.TrimSpace(output)))
+	}
+	return records, nil
+}
+
+// ParseMetadataJSON 解析 exiftool -json 输出
+func ParseMetadataJSON(output []byte) (Metadata, error) {
+	records, err := ParseBatchMetadataJSON(output)
+	if err != nil {
+		return Metadata{}, err
 	}
 	if len(records) == 0 {
 		return Metadata{}, errors.New("exiftool 未返回任何元数据")
@@ -44,19 +185,7 @@ func ParseMetadataJSON(output []byte) (Metadata, error) {
 	return records[0], nil
 }
 
-func WriteGeotag(runner CommandRunner, rawPath string, gpxFiles []string, geosync string) ([]byte, error) {
-	args := []string{
-		"-overwrite_original",
-		"-P",
-		fmt.Sprintf("-geosync=%s", geosync),
-	}
-	for _, gpx := range gpxFiles {
-		args = append(args, "-geotag", gpx)
-	}
-	args = append(args, rawPath)
-	return runner.CombinedOutput("exiftool", args...)
-}
-
+// ClassifyFailure 分析 exiftool 执行失败原因并输出用户友好的提示
 func ClassifyFailure(output []byte, err error) string {
 	text := strings.ToLower(string(bytes.TrimSpace(output)))
 	switch {
@@ -73,17 +202,90 @@ func ClassifyFailure(output []byte, err error) string {
 	}
 }
 
-func SyncGPS(runner CommandRunner, sourceRaw, targetPath string) error {
-	_, err := runner.CombinedOutput(
-		"exiftool", "-overwrite_original", "-P", "-TagsFromFile", sourceRaw, "-GPS:all", targetPath,
-	)
+// ==========================================
+// 1. GPX 轨迹匹配与 GPS 经纬度操作 (Cap 1)
+// ==========================================
+
+// WriteGeotag 调用 exiftool 匹配 GPX 轨迹写入照片 GPS 经纬度
+func WriteGeotag(runner CommandRunner, rawPath string, gpxFiles []string, geosync string) ([]byte, error) {
+	args := []string{
+		"-overwrite_original",
+		"-P",
+		"-api", "GeoMaxIntSecs=1800",
+		"-api", "GeoMaxExtSecs=1800",
+		fmt.Sprintf("-geosync=%s", geosync),
+	}
+
+	for _, gpx := range gpxFiles {
+		args = append(args, "-geotag", gpx)
+	}
+
+	args = append(args, rawPath)
+	return runner.CombinedOutput("exiftool", args...)
+}
+
+// WriteCoordinates 直接为照片文件写入指定的 GPS 经纬度与海拔（用于智能插值与手动标记）
+func WriteCoordinates(runner CommandRunner, filePath string, lat, lon, alt float64) error {
+	latRef := "N"
+	absLat := lat
+	if lat < 0 {
+		latRef = "S"
+		absLat = -lat
+	}
+
+	lonRef := "E"
+	absLon := lon
+	if lon < 0 {
+		lonRef = "W"
+		absLon = -lon
+	}
+
+	args := []string{
+		"-overwrite_original",
+		"-P",
+		fmt.Sprintf("-GPSLatitude=%.6f", absLat),
+		fmt.Sprintf("-GPSLatitudeRef=%s", latRef),
+		fmt.Sprintf("-GPSLongitude=%.6f", absLon),
+		fmt.Sprintf("-GPSLongitudeRef=%s", lonRef),
+	}
+
+	if alt != 0 {
+		altRef := "0" // 0 = 海拔高于海平面 (Above sea level)
+		absAlt := alt
+		if alt < 0 {
+			altRef = "1" // 1 = 海拔低于海平面 (Below sea level)
+			absAlt = -alt
+		}
+		args = append(
+			args,
+			fmt.Sprintf("-GPSAltitude=%.2f", absAlt),
+			fmt.Sprintf("-GPSAltitudeRef=%s", altRef),
+		)
+	}
+
+	args = append(args, filePath)
+	_, err := runner.CombinedOutput("exiftool", args...)
 	if err != nil {
-		return fmt.Errorf("同步 GPS 失败：%w", err)
+		return fmt.Errorf("写入 GPS 经纬度坐标失败: %w", err)
 	}
 	return nil
 }
 
-func SyncXMPGPS(runner CommandRunner, sourceRaw, targetXMP string) error {
+// SyncGPSToJPG 将 RAW 中的 GPS 经纬度信息同步到伴随的 JPG 文件（仅同步 GPS，不侵入其他元数据）
+func SyncGPSToJPG(runner CommandRunner, sourceRaw, targetJPG string) error {
+	_, err := runner.CombinedOutput(
+		"exiftool", "-overwrite_original", "-P", "-TagsFromFile", sourceRaw,
+		"-GPS:all",
+		targetJPG,
+	)
+	if err != nil {
+		return fmt.Errorf("同步 GPS 经纬度到 JPG 失败：%w", err)
+	}
+	return nil
+}
+
+// SyncGPSToXMP 将 RAW 中的 GPS 经纬度坐标规范化同步到伴随的 XMP 侧车文件
+func SyncGPSToXMP(runner CommandRunner, sourceRaw, targetXMP string) error {
 	args := []string{
 		"-overwrite_original",
 		"-P",
@@ -100,7 +302,201 @@ func SyncXMPGPS(runner CommandRunner, sourceRaw, targetXMP string) error {
 	}
 	_, err := runner.CombinedOutput("exiftool", args...)
 	if err != nil {
-		return fmt.Errorf("同步 XMP GPS 失败：%w", err)
+		return fmt.Errorf("同步 GPS 经纬度到 XMP 失败：%w", err)
 	}
 	return nil
+}
+
+// ==========================================
+// 2. 逆地理编码地名元数据写入与同步 (Cap 2)
+// ==========================================
+
+// WriteLocation 写入逆地理编码地名标签到照片文件或侧车文件
+func WriteLocation(runner CommandRunner, filePath string, loc domain.LocationInfo) error {
+	if loc.City == "" && loc.Province == "" && loc.Country == "" && loc.District == "" {
+		return nil
+	}
+
+	args := []string{
+		"-overwrite_original",
+		"-P",
+		"-charset", "UTF8",
+		"-codedcharacterset=utf8",
+	}
+
+	if loc.Country != "" {
+		args = append(
+			args,
+			fmt.Sprintf("-XMP-photoshop:Country=%s", loc.Country),
+			fmt.Sprintf("-IPTC:Country-PrimaryLocationName=%s", loc.Country),
+		)
+	}
+	if loc.CountryCode != "" {
+		args = append(
+			args,
+			fmt.Sprintf("-XMP-iptcCore:CountryCode=%s", loc.CountryCode),
+			fmt.Sprintf("-IPTC:Country-PrimaryLocationCode=%s", loc.CountryCode),
+		)
+	}
+	if loc.Province != "" {
+		args = append(
+			args,
+			fmt.Sprintf("-XMP-photoshop:State=%s", loc.Province),
+			fmt.Sprintf("-IPTC:Province-State=%s", loc.Province),
+		)
+	}
+	if loc.City != "" {
+		args = append(
+			args,
+			fmt.Sprintf("-XMP-photoshop:City=%s", loc.City),
+			fmt.Sprintf("-IPTC:City=%s", loc.City),
+		)
+	}
+	if loc.District != "" {
+		args = append(
+			args,
+			fmt.Sprintf("-XMP-iptcCore:Location=%s", loc.District),
+			fmt.Sprintf("-IPTC:Sub-location=%s", loc.District),
+			fmt.Sprintf("-XMP-iptcExt:LocationCreatedSublocation=%s", loc.District),
+			fmt.Sprintf("-XMP-iptcExt:LocationShownSublocation=%s", loc.District),
+		)
+	}
+
+	args = append(args, filePath)
+	_, err := runner.CombinedOutput("exiftool", args...)
+	if err != nil {
+		return fmt.Errorf("写入地理位置信息失败: %w", err)
+	}
+	return nil
+}
+
+// SyncLocationToJPG 将 RAW 中的地名元数据（IPTC/XMP-photoshop）同步到 JPG 文件
+func SyncLocationToJPG(runner CommandRunner, sourceRaw, targetJPG string) error {
+	_, err := runner.CombinedOutput(
+		"exiftool", "-overwrite_original", "-P",
+		"-charset", "UTF8",
+		"-codedcharacterset=utf8",
+		"-TagsFromFile", sourceRaw,
+		"-IPTC:all",
+		"-XMP-photoshop:all",
+		"-XMP-iptcCore:all",
+		"-XMP-iptcExt:all",
+		targetJPG,
+	)
+	if err != nil {
+		return fmt.Errorf("同步地名元数据到 JPG 失败：%w", err)
+	}
+	return nil
+}
+
+// SyncLocationToXMP 将 RAW 中的地名元数据映射写入到伴随的 XMP 侧车文件
+func SyncLocationToXMP(runner CommandRunner, sourceRaw, targetXMP string) error {
+	args := []string{
+		"-overwrite_original",
+		"-P",
+		"-charset", "UTF8",
+		"-TagsFromFile", sourceRaw,
+		"-XMP-photoshop:Country<XMP-photoshop:Country",
+		"-XMP-photoshop:State<XMP-photoshop:State",
+		"-XMP-photoshop:City<XMP-photoshop:City",
+		"-XMP-iptcCore:CountryCode<XMP-iptcCore:CountryCode",
+		"-XMP-iptcCore:Location<XMP-iptcCore:Location",
+		"-XMP-iptcExt:LocationCreatedSublocation<XMP-iptcExt:LocationCreatedSublocation",
+		"-XMP-iptcExt:LocationShownSublocation<XMP-iptcExt:LocationShownSublocation",
+		targetXMP,
+	}
+	_, err := runner.CombinedOutput("exiftool", args...)
+	if err != nil {
+		return fmt.Errorf("同步地名元数据到 XMP 失败：%w", err)
+	}
+	return nil
+}
+
+// ==========================================
+// 3. 坐标解析与格式转换工具
+// ==========================================
+
+var (
+	// 匹配 "39 deg 54' 15.00\" N, 116 deg 23' 30.00\" E" 或 "39 deg 54' 15.00\" N 116 deg 23' 30.00\" E"
+	dmsRegex = regexp.MustCompile(`(\d+)\s*deg\s*(\d+)'\s*([\d.]+)"?\s*([NSEWnsew])`)
+	// 匹配 "39.9042 N, 116.3917 E"
+	decHemiRegex = regexp.MustCompile(`([\d.]+)\s*([NSEWnsew])`)
+)
+
+// ParseCoordinates 解析 GPSPosition 字符串为浮点数经纬度 (lat, lon)
+func ParseCoordinates(posStr string) (lat, lon float64, err error) {
+	clean := strings.TrimSpace(posStr)
+	if clean == "" {
+		return 0, 0, errors.New("GPSPosition 字符串为空")
+	}
+
+	// 1. 尝试 DMS 匹配
+	dmsMatches := dmsRegex.FindAllStringSubmatch(clean, -1)
+	if len(dmsMatches) >= 2 {
+		lat, err1 := dmsToDecimal(dmsMatches[0][1], dmsMatches[0][2], dmsMatches[0][3], dmsMatches[0][4])
+		lon, err2 := dmsToDecimal(dmsMatches[1][1], dmsMatches[1][2], dmsMatches[1][3], dmsMatches[1][4])
+		if err1 == nil && err2 == nil {
+			return lat, lon, nil
+		}
+	}
+
+	// 2. 尝试纯十进制+方向匹配 (如 "39.9042 N, 116.3917 E")
+	decMatches := decHemiRegex.FindAllStringSubmatch(clean, -1)
+	if len(decMatches) >= 2 {
+		lat, err1 := decHemiToDecimal(decMatches[0][1], decMatches[0][2])
+		lon, err2 := decHemiToDecimal(decMatches[1][1], decMatches[1][2])
+		if err1 == nil && err2 == nil {
+			return lat, lon, nil
+		}
+	}
+
+	// 3. 尝试逗号或空格分隔的纯浮点数 (如 "39.9042, 116.3917")
+	parts := strings.FieldsFunc(
+		clean, func(r rune) bool {
+			return r == ',' || r == ' ' || r == '\t'
+		},
+	)
+	var cleanParts []string
+	for _, p := range parts {
+		if p != "" {
+			cleanParts = append(cleanParts, p)
+		}
+	}
+	if len(cleanParts) >= 2 {
+		latVal, err1 := strconv.ParseFloat(cleanParts[0], 64)
+		lonVal, err2 := strconv.ParseFloat(cleanParts[1], 64)
+		if err1 == nil && err2 == nil {
+			return latVal, lonVal, nil
+		}
+	}
+
+	return 0, 0, fmt.Errorf("无法识别的 GPSPosition 格式: %s", posStr)
+}
+
+func dmsToDecimal(degStr, minStr, secStr, hemi string) (float64, error) {
+	deg, err1 := strconv.ParseFloat(degStr, 64)
+	min, err2 := strconv.ParseFloat(minStr, 64)
+	sec, err3 := strconv.ParseFloat(secStr, 64)
+	if err1 != nil || err2 != nil || err3 != nil {
+		return 0, errors.New("无效的 DMS 数值")
+	}
+
+	dec := deg + (min / 60.0) + (sec / 3600.0)
+	hemi = strings.ToUpper(hemi)
+	if hemi == "S" || hemi == "W" {
+		dec = -dec
+	}
+	return dec, nil
+}
+
+func decHemiToDecimal(valStr, hemi string) (float64, error) {
+	val, err := strconv.ParseFloat(valStr, 64)
+	if err != nil {
+		return 0, err
+	}
+	hemi = strings.ToUpper(hemi)
+	if hemi == "S" || hemi == "W" {
+		val = -val
+	}
+	return val, nil
 }

@@ -27,6 +27,10 @@ func TestDiscoverer_DiscoverAssets(t *testing.T) {
 		"DSC_1004.JPG",
 		"sub/DSC_2001.DNG",
 		"sub/DSC_2001.JPG",
+		"inbox_pending_report_latest.md",
+		"photools_latest.log",
+		"notes.txt",
+		"data.json",
 	}
 
 	for _, f := range files {
@@ -77,5 +81,21 @@ func TestDiscoverer_DiscoverAssets(t *testing.T) {
 	g5 := groups[4]
 	if g5.BaseName != "DSC_2001" || !g5.IsPaired() {
 		t.Errorf("子目录资产组识别异常: %+v", g5)
+	}
+}
+
+func TestListGPXFiles(t *testing.T) {
+	tempDir := t.TempDir()
+
+	_ = os.WriteFile(filepath.Join(tempDir, "track1.gpx"), []byte("gpx"), 0o644)
+	_ = os.WriteFile(filepath.Join(tempDir, "track2.GPX"), []byte("gpx"), 0o644)
+	_ = os.WriteFile(filepath.Join(tempDir, "ignore.txt"), []byte("txt"), 0o644)
+
+	gpxs, err := ListGPXFiles(tempDir)
+	if err != nil {
+		t.Fatalf("ListGPXFiles failed: %v", err)
+	}
+	if len(gpxs) != 2 {
+		t.Errorf("expected 2 gpx files, got %d", len(gpxs))
 	}
 }
