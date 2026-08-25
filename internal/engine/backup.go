@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/vincentchyu/photo-processing/internal/domain"
 )
@@ -43,6 +44,56 @@ func BackupAssetGroups(groups []domain.AssetGroup, sourceRoot, targetBackupDir s
 	return copiedCount, nil
 }
 
+// CreateBackup 将源目录中的全部照片与伴随文件完整快照备份到目标备份目录中
+func CreateBackup(sourceDir, backupDir string) (int, error) {
+	if fi, err := os.Stat(sourceDir); err != nil || !fi.IsDir() {
+		return 0, fmt.Errorf("源目录不存在或无法读取: %s", sourceDir)
+	}
+
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		return 0, fmt.Errorf("创建备份目录失败 (%s): %w", backupDir, err)
+	}
+
+	cleanSource := filepath.Clean(sourceDir)
+	backedUpCount := 0
+	err := filepath.WalkDir(sourceDir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if filepath.Clean(path) == cleanSource {
+				return nil
+			}
+			if IsIgnoredDir(entry.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if strings.HasPrefix(entry.Name(), ".") {
+			return nil
+		}
+
+		rel, err := filepath.Rel(sourceDir, path)
+		if err != nil {
+			return err
+		}
+
+		destPath := filepath.Join(backupDir, rel)
+		if err := copyFilePreserve(path, destPath); err != nil {
+			return fmt.Errorf("备份文件失败 [%s -> %s]: %w", path, destPath, err)
+		}
+		backedUpCount++
+		return nil
+	})
+
+	if err != nil {
+		return backedUpCount, err
+	}
+
+	return backedUpCount, nil
+}
+
 // RestoreBackup 从备份目录还原文件到目标 Inbox 目录中
 func RestoreBackup(backupDir, targetInboxDir string) (int, error) {
 	if fi, err := os.Stat(backupDir); err != nil || !fi.IsDir() {
@@ -54,11 +105,18 @@ func RestoreBackup(backupDir, targetInboxDir string) (int, error) {
 	}
 
 	restoredCount := 0
-	err := filepath.Walk(backupDir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.WalkDir(backupDir, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() {
+		if entry.IsDir() {
+			if strings.HasPrefix(entry.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if strings.HasPrefix(entry.Name(), ".") {
 			return nil
 		}
 

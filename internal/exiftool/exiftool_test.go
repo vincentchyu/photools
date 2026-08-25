@@ -456,3 +456,69 @@ func TestParseCoordinates(t *testing.T) {
 		})
 	}
 }
+
+func TestInspectPhotoMetadata(t *testing.T) {
+	t.Run("完整解析相机与曝光参数与GPS", func(t *testing.T) {
+		jsonOutput := []byte(`[{
+			"SourceFile": "/photos/DSC_8021.NEF",
+			"File:FileSize": "45.2 MB",
+			"File:FileModifyDate": "2026:08:25 10:00:00+08:00",
+			"EXIF:Make": "NIKON CORPORATION",
+			"EXIF:Model": "NIKON Z 8",
+			"Composite:LensSpec": "24-70mm f/2.8",
+			"EXIF:LensModel": "NIKKOR Z 24-70mm f/2.8 S",
+			"EXIF:DateTimeOriginal": "2026:08:25 09:30:15",
+			"EXIF:ExposureTime": "1/250",
+			"EXIF:FNumber": 2.8,
+			"EXIF:ISO": 100,
+			"EXIF:FocalLength": 35.0,
+			"Composite:GPSLatitude": 31.2304,
+			"Composite:GPSLongitude": 121.4737,
+			"Composite:GPSAltitude": 12.5,
+			"XMP:Country": "中国",
+			"XMP:State": "上海市",
+			"XMP:City": "上海市",
+			"XMP:Location": "外滩"
+		}]`)
+
+		runner := &mockCommandRunner{output: jsonOutput}
+		meta, err := InspectPhotoMetadata(runner, "/photos/DSC_8021.NEF")
+		if err != nil {
+			t.Fatalf("InspectPhotoMetadata 报错: %v", err)
+		}
+
+		if meta.CameraMake != "NIKON CORPORATION" {
+			t.Errorf("CameraMake 不匹配: %s", meta.CameraMake)
+		}
+		if meta.CameraModel != "NIKON Z 8" {
+			t.Errorf("CameraModel 不匹配: %s", meta.CameraModel)
+		}
+		if meta.LensModel != "NIKKOR Z 24-70mm f/2.8 S" {
+			t.Errorf("LensModel 不匹配: %s", meta.LensModel)
+		}
+		if meta.ExposureTime != "1/250" {
+			t.Errorf("ExposureTime 不匹配: %s", meta.ExposureTime)
+		}
+		if meta.FNumber != "2.8" {
+			t.Errorf("FNumber 不匹配: %s", meta.FNumber)
+		}
+		if meta.ISO != "100" {
+			t.Errorf("ISO 不匹配: %s", meta.ISO)
+		}
+		if meta.FocalLength != "35" {
+			t.Errorf("FocalLength 不匹配: %s", meta.FocalLength)
+		}
+		if meta.Latitude == nil || *meta.Latitude != 31.2304 {
+			t.Errorf("Latitude 不匹配: %v", meta.Latitude)
+		}
+		if meta.Longitude == nil || *meta.Longitude != 121.4737 {
+			t.Errorf("Longitude 不匹配: %v", meta.Longitude)
+		}
+		if meta.Country != "中国" || meta.District != "外滩" {
+			t.Errorf("Location 不匹配: %s %s", meta.Country, meta.District)
+		}
+		if len(meta.RawTags) == 0 {
+			t.Errorf("RawTags 期望非空")
+		}
+	})
+}

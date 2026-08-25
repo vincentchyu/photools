@@ -103,7 +103,7 @@ func Build(opts PipelineOptions) (domain.Task, error) {
 
 	runner := opts.Runner
 	if runner == nil {
-		runner = exiftool.ExecRunner{}
+		runner = exiftool.DefaultRunner()
 	}
 
 	rawExts := opts.RawExtensions
@@ -216,11 +216,13 @@ func Build(opts PipelineOptions) (domain.Task, error) {
 		activeCaps = append(activeCaps, cap3)
 	}
 
-	backupDir := opts.BackupDir
-	if opts.EnableBackup && backupDir == "" {
-		backupDir = filepath.Join(baseDir, "Inbox_bak")
-	}
-	if backupDir != "" {
+	// 仅当明确启用了 EnableBackup 时才设置 backupDir
+	backupDir := ""
+	if opts.EnableBackup {
+		backupDir = opts.BackupDir
+		if backupDir == "" {
+			backupDir = filepath.Join(baseDir, "Inbox_bak")
+		}
 		backupDir, _ = filepath.Abs(backupDir)
 	}
 

@@ -33,7 +33,7 @@ type Capability struct {
 func NewCapability(cfg Config) *Capability {
 	runner := cfg.Runner
 	if runner == nil {
-		runner = exiftool.ExecRunner{}
+		runner = exiftool.DefaultRunner()
 	}
 	geocoder := cfg.Geocoder
 	if geocoder == nil {

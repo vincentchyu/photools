@@ -429,7 +429,7 @@ func TestPipelineOrchestrator_RealtimeLogFileStreaming(t *testing.T) {
 	}
 
 	logStr := string(content)
-	if !contains(logStr, "PhotoTools 流水线执行日志") {
+	if !contains(logStr, "photools 流水线执行日志") {
 		t.Errorf("expected log header in photools_latest.log, got:\n%s", logStr)
 	}
 	if !contains(logStr, "DSC_8888") {

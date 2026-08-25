@@ -75,7 +75,7 @@ func NewOrchestrator(cfg Config) (*Orchestrator, error) {
 	}
 	runner := cfg.Runner
 	if runner == nil {
-		runner = exiftool.ExecRunner{}
+		runner = exiftool.DefaultRunner()
 	}
 
 	// 1. 按 Priority 分组构建 Phase
@@ -257,7 +257,7 @@ func (o *Orchestrator) PlanWithProgress(ctx context.Context, eventCh chan<- doma
 	if len(missingPaths) > 0 {
 		runner := o.runner
 		if runner == nil {
-			runner = exiftool.ExecRunner{}
+			runner = exiftool.DefaultRunner()
 		}
 		metaMap, _ := exiftool.ReadBatchMetadataMapConcurrent(runner, missingPaths, o.workers, func(processed, total int) {
 			pct := 0.0
@@ -423,7 +423,7 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 
 		// 写入执行头部信息
 		headerText := fmt.Sprintf("================================================================================\n"+
-			"📷 PhotoTools 流水线执行日志 (Pipeline Execution Log)\n"+
+			"📷 photools 流水线执行日志 (Pipeline Execution Log)\n"+
 			"- 启动时间: %s\n"+
 			"- 任务名称: %s\n"+
 			"- 扫描源目录: %s\n"+

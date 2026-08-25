@@ -38,7 +38,7 @@ type Capability struct {
 func NewCapability(cfg Config) *Capability {
 	runner := cfg.Runner
 	if runner == nil {
-		runner = exiftool.ExecRunner{}
+		runner = exiftool.DefaultRunner()
 	}
 	p := cfg.Priority
 	if p <= 0 {
@@ -118,43 +118,47 @@ func (c *Capability) SetMaxTimeGap(d time.Duration) {
 
 // Init 执行 ExifTool 自检 (使用 sync.Once 保证只自检一次)
 func (c *Capability) Init(ctx context.Context, report func(domain.PluginInitReport)) error {
-	c.initOnce.Do(func() {
-		if report != nil {
-			report(domain.PluginInitReport{
-				PluginID: c.ID(),
-				Name:     c.Name(),
-				Stage:    "环境自检",
-				Message:  "正在检查 ExifTool 核心引擎...",
-				Percent:  0.5,
-				Status:   domain.HealthReady,
-			})
-		}
+	c.initOnce.Do(
+		func() {
+			if report != nil {
+				report(
+					domain.PluginInitReport{
+						PluginID: c.ID(),
+						Name:     c.Name(),
+						Stage:    "环境自检",
+						Message:  "正在检查 ExifTool 核心引擎...",
+						Percent:  0.5,
+						Status:   domain.HealthReady,
+					},
+				)
+			}
 
-		out, err := c.runner.CombinedOutput("exiftool", "-ver")
-		if err != nil {
-			c.initErr = err
+			out, err := c.runner.CombinedOutput("exiftool", "-ver")
+			if err != nil {
+				c.initErr = err
+				c.lastReport = domain.PluginInitReport{
+					PluginID: c.ID(),
+					Name:     c.Name(),
+					Stage:    "自检失败",
+					Message:  fmt.Sprintf("ExifTool 异常: %v", err),
+					Percent:  1.0,
+					Status:   domain.HealthFailed,
+					Err:      err,
+				}
+				return
+			}
+
+			ver := strings.TrimSpace(string(out))
 			c.lastReport = domain.PluginInitReport{
 				PluginID: c.ID(),
 				Name:     c.Name(),
-				Stage:    "自检失败",
-				Message:  fmt.Sprintf("ExifTool 异常: %v", err),
+				Stage:    "自检完成",
+				Message:  fmt.Sprintf("GPS 插值引擎就绪 (推算窗口: %s, ExifTool v%s)", c.maxTimeGap, ver),
 				Percent:  1.0,
-				Status:   domain.HealthFailed,
-				Err:      err,
+				Status:   domain.HealthReady,
 			}
-			return
-		}
-
-		ver := strings.TrimSpace(string(out))
-		c.lastReport = domain.PluginInitReport{
-			PluginID: c.ID(),
-			Name:     c.Name(),
-			Stage:    "自检完成",
-			Message:  fmt.Sprintf("GPS 插值引擎就绪 (推算窗口: %s, ExifTool v%s)", c.maxTimeGap, ver),
-			Percent:  1.0,
-			Status:   domain.HealthReady,
-		}
-	})
+		},
+	)
 
 	if report != nil && c.lastReport.Name != "" {
 		report(c.lastReport)
@@ -236,11 +240,13 @@ func (c *Capability) buildAnchorIndex(batch []*domain.AssetContext, sendEvent fu
 	}
 
 	if sendEvent != nil && len(batch) > 100 {
-		sendEvent(domain.ProgressEvent{
-			Stage:   c.RequiredStage(),
-			Level:   domain.LevelInfo,
-			Message: fmt.Sprintf("⚡ [GPS智能插值] 正在为 %d 组资产秒级提取元数据并构建时间索引...", len(batch)),
-		})
+		sendEvent(
+			domain.ProgressEvent{
+				Stage:   c.RequiredStage(),
+				Level:   domain.LevelInfo,
+				Message: fmt.Sprintf("⚡ [GPS智能插值] 正在为 %d 组资产秒级提取元数据并构建时间索引...", len(batch)),
+			},
+		)
 	}
 
 	// 1. 收集尚未读取元数据的主文件路径
@@ -308,9 +314,11 @@ func (c *Capability) buildAnchorIndex(batch []*domain.AssetContext, sendEvent fu
 	}
 
 	// 按拍摄时间升序排序
-	sort.Slice(idx.allAnchors, func(i, j int) bool {
-		return idx.allAnchors[i].Time.Before(idx.allAnchors[j].Time)
-	})
+	sort.Slice(
+		idx.allAnchors, func(i, j int) bool {
+			return idx.allAnchors[i].Time.Before(idx.allAnchors[j].Time)
+		},
+	)
 
 	// 构建按日期分桶的有序列表
 	for _, a := range idx.allAnchors {
@@ -337,9 +345,11 @@ func (idx *AnchorIndex) findNearestAnchors(targetTime time.Time, maxGap time.Dur
 	}
 
 	// 二分查找第一个 Time >= targetTime 的位置
-	pos := sort.Search(len(candidates), func(i int) bool {
-		return !candidates[i].Time.Before(targetTime)
-	})
+	pos := sort.Search(
+		len(candidates), func(i int) bool {
+			return !candidates[i].Time.Before(targetTime)
+		},
+	)
 
 	// 1. 检查前置锚点 (pos-1)
 	if pos > 0 {
@@ -372,18 +382,22 @@ func (idx *AnchorIndex) addAnchor(anchor GPSAnchor) {
 	defer idx.mu.Unlock()
 
 	// 插入全量有序切片
-	pos := sort.Search(len(idx.allAnchors), func(i int) bool {
-		return !idx.allAnchors[i].Time.Before(anchor.Time)
-	})
+	pos := sort.Search(
+		len(idx.allAnchors), func(i int) bool {
+			return !idx.allAnchors[i].Time.Before(anchor.Time)
+		},
+	)
 	idx.allAnchors = append(idx.allAnchors, GPSAnchor{})
 	copy(idx.allAnchors[pos+1:], idx.allAnchors[pos:])
 	idx.allAnchors[pos] = anchor
 
 	// 插入日期分桶切片
 	daily := idx.dailyAnchors[anchor.DateKey]
-	dPos := sort.Search(len(daily), func(i int) bool {
-		return !daily[i].Time.Before(anchor.Time)
-	})
+	dPos := sort.Search(
+		len(daily), func(i int) bool {
+			return !daily[i].Time.Before(anchor.Time)
+		},
+	)
 	daily = append(daily, GPSAnchor{})
 	copy(daily[dPos+1:], daily[dPos:])
 	daily[dPos] = anchor
@@ -391,7 +405,9 @@ func (idx *AnchorIndex) addAnchor(anchor GPSAnchor) {
 }
 
 // ExecuteProcess 根据同批次前后邻近照片时间差做双向或单向插值推算
-func (c *Capability) ExecuteProcess(ctx context.Context, actx *domain.AssetContext, sendEvent func(domain.ProgressEvent)) error {
+func (c *Capability) ExecuteProcess(
+	ctx context.Context, actx *domain.AssetContext, sendEvent func(domain.ProgressEvent),
+) error {
 	primary := actx.Asset.PrimaryPath()
 	if primary == "" {
 		return nil
@@ -447,9 +463,11 @@ func (c *Capability) ExecuteProcess(ctx context.Context, actx *domain.AssetConte
 				targetLon = beforeAnchor.Lon + weight*(afterAnchor.Lon-beforeAnchor.Lon)
 				targetAlt = beforeAnchor.Alt + weight*(afterAnchor.Alt-beforeAnchor.Alt)
 			}
-			inferMethod = fmt.Sprintf("双向时间插值 (前置: %s [%.0fs 前], 后置: %s [%.0fs 后])",
+			inferMethod = fmt.Sprintf(
+				"双向时间插值 (前置: %s [%.0fs 前], 后置: %s [%.0fs 后])",
 				beforeAnchor.BaseName, targetTime.Sub(beforeAnchor.Time).Seconds(),
-				afterAnchor.BaseName, afterAnchor.Time.Sub(targetTime).Seconds())
+				afterAnchor.BaseName, afterAnchor.Time.Sub(targetTime).Seconds(),
+			)
 		}
 
 	case beforeAnchor != nil:
@@ -457,26 +475,35 @@ func (c *Capability) ExecuteProcess(ctx context.Context, actx *domain.AssetConte
 		targetLat = beforeAnchor.Lat
 		targetLon = beforeAnchor.Lon
 		targetAlt = beforeAnchor.Alt
-		inferMethod = fmt.Sprintf("前置近邻推断 (参考: %s [%.0fs 前])",
-			beforeAnchor.BaseName, targetTime.Sub(beforeAnchor.Time).Seconds())
+		inferMethod = fmt.Sprintf(
+			"前置近邻推断 (参考: %s [%.0fs 前])",
+			beforeAnchor.BaseName, targetTime.Sub(beforeAnchor.Time).Seconds(),
+		)
 
 	case afterAnchor != nil:
 		// 仅有后置锚点 (同机位/就近继承)
 		targetLat = afterAnchor.Lat
 		targetLon = afterAnchor.Lon
 		targetAlt = afterAnchor.Alt
-		inferMethod = fmt.Sprintf("后置近邻推断 (参考: %s [%.0fs 后])",
-			afterAnchor.BaseName, afterAnchor.Time.Sub(targetTime).Seconds())
+		inferMethod = fmt.Sprintf(
+			"后置近邻推断 (参考: %s [%.0fs 后])",
+			afterAnchor.BaseName, afterAnchor.Time.Sub(targetTime).Seconds(),
+		)
 
 	default:
 		if c.allowNoGPS {
 			if sendEvent != nil {
-				sendEvent(domain.ProgressEvent{
-					Stage:   c.RequiredStage(),
-					Level:   domain.LevelWarn,
-					Message: fmt.Sprintf("⚠️ [GPS智能插值] 窗口 %s 内无邻近 GPS 锚点，跳过插值（允许降级归档）：%s", c.maxTimeGap, actx.Asset.DisplayName()),
-					Asset:   &actx.Asset,
-				})
+				sendEvent(
+					domain.ProgressEvent{
+						Stage: c.RequiredStage(),
+						Level: domain.LevelWarn,
+						Message: fmt.Sprintf(
+							"⚠️ [GPS智能插值] 窗口 %s 内无邻近 GPS 锚点，跳过插值（允许降级归档）：%s", c.maxTimeGap,
+							actx.Asset.DisplayName(),
+						),
+						Asset: &actx.Asset,
+					},
+				)
 			}
 			return nil
 		}
@@ -508,22 +535,29 @@ func (c *Capability) ExecuteProcess(ctx context.Context, actx *domain.AssetConte
 	actx.UpdateMetadata(meta)
 
 	// 动态补充新锚点
-	anchorIdx.addAnchor(GPSAnchor{
-		Time:     targetTime,
-		DateKey:  targetTime.Format("2006-01-02"),
-		Lat:      targetLat,
-		Lon:      targetLon,
-		Alt:      targetAlt,
-		BaseName: actx.Asset.BaseName,
-	})
+	anchorIdx.addAnchor(
+		GPSAnchor{
+			Time:     targetTime,
+			DateKey:  targetTime.Format("2006-01-02"),
+			Lat:      targetLat,
+			Lon:      targetLon,
+			Alt:      targetAlt,
+			BaseName: actx.Asset.BaseName,
+		},
+	)
 
 	if sendEvent != nil {
-		sendEvent(domain.ProgressEvent{
-			Stage:   c.RequiredStage(),
-			Level:   domain.LevelInfo,
-			Message: fmt.Sprintf("📍 [GPS智能插值] 成功补全坐标：%s (%s, %.4f, %.4f)", actx.Asset.DisplayName(), inferMethod, targetLat, targetLon),
-			Asset:   &actx.Asset,
-		})
+		sendEvent(
+			domain.ProgressEvent{
+				Stage: c.RequiredStage(),
+				Level: domain.LevelInfo,
+				Message: fmt.Sprintf(
+					"📍 [GPS智能插值] 成功补全坐标：%s (%s, %.4f, %.4f)", actx.Asset.DisplayName(), inferMethod,
+					targetLat, targetLon,
+				),
+				Asset: &actx.Asset,
+			},
+		)
 	}
 
 	return nil

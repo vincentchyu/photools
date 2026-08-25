@@ -1,4 +1,4 @@
-# PhotoTools 插件化流水线与能力解耦架构设计文档
+# photools 插件化流水线与能力解耦架构设计文档
 
 本文档详细说明 `photools` 的系统分层架构、四大核心能力插件协议、基于 Priority 的分阶段同步屏障调度器、配置文件生命周期以及详尽的业务时序图。
 
@@ -9,36 +9,46 @@
 ```mermaid
 flowchart TD
     subgraph Layer_UI["1. 交互与展示层 (Presentation Layer)"]
-        CLI["CLI 命令行入口\n(photools geotag / geocode / pipeline / organize-by-date)"]
+        CLI["CLI 命令行入口\n(photools geotag / geocode / pipeline / inspect / backup)"]
         TUI["TUI 交互工作台 (Bubble Tea)\n[✔] P10 GPX匹配\n[✔] P15 GPS插值推算\n[✔] P20 逆地理编码\n[✔] P100 拍摄日归档"]
+        MacApp["macOS 原生桌面工作台 (SwiftUI)\n[4步工作流 · EXIF检查器 · 即时反查预览 · 快照双向控制台]"]
     end
 
     subgraph Layer_Config["2. 配置与持久化层 (Configuration Layer)"]
         CFG["插件配置文件 (~/.config/photools/plugins.json)\n自动初始化 · 扩展 Options · 自定义 Priority · 自愈热重载"]
     end
 
-    subgraph Layer_Orchestration["3. 流水线编排与调度层 (Orchestration Layer)"]
+    subgraph Layer_FFI["3. C-Shared FFI 直通与跨语言桥接层"]
+        Dylib["libphotools.dylib (cmd/photools-cshared)\nPhotools_Init / Photools_RunPipeline\nPhotools_InspectPhotoMetadata / Photools_LookupCoordinates\nPhotools_CreateBackup / Photools_RestoreBackup"]
+    end
+
+    subgraph Layer_Orchestration["4. 流水线编排与调度层 (Orchestration Layer)"]
         Builder["流水线装配器 (PipelineBuilder)"]
         Scheduler["分阶段屏障调度器 (Phased Priority Scheduler)"]
         Pool["资产并发池 (WorkerPool)"]
         Ctx["资产流转上下文 (AssetContext)"]
     end
 
-    subgraph Layer_Capabilities["4. 独立能力插件层 (Capability Plugins Layer)"]
+    subgraph Layer_Capabilities["5. 独立能力插件层 (Capability Plugins Layer)"]
         Cap1["能力 1: GPXMatchingCapability (P10)\nGPX 轨迹匹配 ➔ RAW GPS 写入 ➔ 二次校验 ➔ 同步 GPS 到 JPG/XMP"]
         Cap15["能力 1.5: GPSInterpolateCapability (P15) ✨\n同批次前后照片时间权重大圆插值 / 近邻机位推算 ➔ 补全 GPS 写入 RAW 并同步"]
         Cap2["能力 2: ReverseGeocodeCapability (P20)\n坐标提取 ➔ 3D KD-Tree 逆地理查询 ➔ 写入 IPTC/XMP 地名元数据"]
         Cap3["能力 3: DateArchiveCapability (P100)\n拍摄日期提取 ➔ 规范重命名 (YYYY-MM-DD) ➔ 整组原子归档移动"]
     end
 
-    subgraph Layer_Engine["5. 核心引擎与底层执行层 (Engine & Drivers Layer)"]
-        ExifDriver["ExifTool 交互驱动 (exiftool.CommandRunner)"]
+    subgraph Layer_Engine["6. 核心引擎与底层执行层 (Engine & Drivers Layer)"]
+        ExifDriver["ExifTool 交互驱动 (exiftool.CommandRunner)\nInspectPhotoMetadata / ReadMetadata / WriteLocation"]
         GeoEngine["离线逆地理空间索引 (geocoding.ReverseGeocoder - 3D KD-Tree)"]
-        ArchiveEngine["文件安全归档引擎 (engine.Archiver)"]
+        ArchiveEngine["文件安全归档引擎 (engine.Archiver / engine.CreateBackup / engine.RestoreBackup)"]
     end
 
     CLI --> Builder
     TUI --> Builder
+    MacApp --> Dylib
+    Dylib --> Builder
+    Dylib --> GeoEngine
+    Dylib --> ExifDriver
+    Dylib --> ArchiveEngine
     CFG -.-> Builder
     Builder --> Scheduler
     Scheduler --> Pool

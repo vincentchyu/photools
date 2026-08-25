@@ -107,7 +107,7 @@ func TestInstallShellCompletion_Zsh_And_Bash_And_Idempotent(t *testing.T) {
 	// 2. 测试幂等性 (再次运行不重复追加)
 	_, _ = InstallShellCompletion()
 	contentZshAgain, _ := os.ReadFile(zshrcPath)
-	if strings.Count(string(contentZshAgain), "# PhotoTools Shell Auto-Completion") != 1 {
+	if strings.Count(string(contentZshAgain), "# photools Shell Auto-Completion") != 1 {
 		t.Errorf("重复运行 InstallShellCompletion 导致重复追加配置")
 	}
 

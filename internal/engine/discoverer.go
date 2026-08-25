@@ -39,9 +39,26 @@ func isIgnoredDocExt(ext string) bool {
 	return ok
 }
 
+// IsIgnoredDir 判断是否为应屏蔽扫描的系统/备份/归档/轨迹/日志目录
+func IsIgnoredDir(name string) bool {
+	lower := strings.ToLower(name)
+	if strings.HasPrefix(lower, ".") {
+		return true
+	}
+	if lower == "inbox_bak" || lower == "bak" || lower == "backup" || lower == "backups" ||
+		strings.HasSuffix(lower, "_bak") || strings.HasSuffix(lower, "_backup") {
+		return true
+	}
+	if lower == "processed" || lower == "gpx" || lower == "logs" || lower == "node_modules" || lower == "dist" {
+		return true
+	}
+	return false
+}
+
 // Discover 递归扫描 sourceDir 并返回按目录和 BaseName 排序的 AssetGroup
 func (d *Discoverer) Discover(sourceDir string) ([]domain.AssetGroup, error) {
 	groups := map[string]*domain.AssetGroup{}
+	cleanSourceDir := filepath.Clean(sourceDir)
 
 	err := filepath.WalkDir(
 		sourceDir, func(path string, entry os.DirEntry, err error) error {
@@ -49,8 +66,12 @@ func (d *Discoverer) Discover(sourceDir string) ([]domain.AssetGroup, error) {
 				return err
 			}
 			if entry.IsDir() {
-				// 忽略隐藏目录（以 . 开头）
-				if strings.HasPrefix(entry.Name(), ".") && entry.Name() != "." {
+				// 如果是源根目录本身，允许进入
+				if filepath.Clean(path) == cleanSourceDir {
+					return nil
+				}
+				// 忽略隐藏目录与备份/归档/轨迹/日志等目录
+				if IsIgnoredDir(entry.Name()) {
 					return filepath.SkipDir
 				}
 				return nil
@@ -129,20 +150,42 @@ func (d *Discoverer) isRawExt(ext string) bool {
 
 // ListGPXFiles 扫描指定目录下的全部 .gpx 轨迹文件
 func ListGPXFiles(gpxDir string) ([]string, error) {
-	var entries []string
+	if _, err := os.Stat(gpxDir); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var gpxFiles []string
+	cleanGpxDir := filepath.Clean(gpxDir)
 	err := filepath.WalkDir(
-		gpxDir, func(path string, d os.DirEntry, err error) error {
+		gpxDir, func(path string, entry os.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
-			if d.IsDir() {
+			if entry.IsDir() {
+				if filepath.Clean(path) == cleanGpxDir {
+					return nil
+				}
+				if strings.HasPrefix(entry.Name(), ".") || IsIgnoredDir(entry.Name()) {
+					return filepath.SkipDir
+				}
 				return nil
 			}
-			if strings.EqualFold(filepath.Ext(d.Name()), ".gpx") {
-				entries = append(entries, path)
+			if strings.HasPrefix(entry.Name(), ".") {
+				return nil
+			}
+			if strings.EqualFold(filepath.Ext(entry.Name()), ".gpx") {
+				gpxFiles = append(gpxFiles, path)
 			}
 			return nil
 		},
 	)
-	return entries, err
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Strings(gpxFiles)
+	return gpxFiles, nil
 }

@@ -406,11 +406,12 @@ func (m Model) startPluginsInitCmd() tea.Cmd {
 	ch := m.initChan
 	doneCh := m.initDoneChan
 
+	runner := exiftool.DefaultRunner()
 	caps := []domain.Capability{
-		gpxmatch.NewCapability(gpxmatch.Config{Runner: exiftool.ExecRunner{}}),
-		gpsinterpolate.NewCapability(gpsinterpolate.Config{Runner: exiftool.ExecRunner{}}),
-		reversegeocode.NewCapability(reversegeocode.Config{Runner: exiftool.ExecRunner{}}),
-		datearchive.NewCapability(datearchive.Config{Runner: exiftool.ExecRunner{}}),
+		gpxmatch.NewCapability(gpxmatch.Config{Runner: runner}),
+		gpsinterpolate.NewCapability(gpsinterpolate.Config{Runner: runner}),
+		reversegeocode.NewCapability(reversegeocode.Config{Runner: runner}),
+		datearchive.NewCapability(datearchive.Config{Runner: runner}),
 	}
 
 	return func() tea.Msg {
@@ -1290,7 +1291,7 @@ func (m Model) View() string {
 }
 
 func (m Model) renderFrame(body string) string {
-	header := TitleStyle.Render(" 📷 PhotoTools - 摄影工作流自动化处理工作台 v2.0 ")
+	header := TitleStyle.Render(" 📷 photools - 摄影工作流自动化处理工作台 v2.0 ")
 
 	var footer string
 	switch m.state {

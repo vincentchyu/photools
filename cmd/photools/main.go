@@ -17,6 +17,7 @@ import (
 	"github.com/vincentchyu/photo-processing/internal/config"
 	"github.com/vincentchyu/photo-processing/internal/domain"
 	"github.com/vincentchyu/photo-processing/internal/engine"
+	"github.com/vincentchyu/photo-processing/internal/exiftool"
 	"github.com/vincentchyu/photo-processing/internal/geocoding"
 	"github.com/vincentchyu/photo-processing/internal/geodata"
 	"github.com/vincentchyu/photo-processing/internal/pipeline"
@@ -57,6 +58,10 @@ func main() {
 		runOrganizeByDate()
 	case "restore-test", "restore-backup":
 		runRestoreTest(defaultBaseDir)
+	case "backup", "snapshot":
+		runBackup(defaultBaseDir)
+	case "inspect":
+		runInspect(os.Args[2:])
 	case "geodata":
 		runGeoData(os.Args[2:])
 	case "completion":
@@ -89,7 +94,7 @@ func defaultBaseDir() (string, error) {
 }
 
 func printUsage() {
-	fmt.Println("📷 PhotoTools - 摄影师专业 GPS 轨迹匹配、地理逆编码与照片结构化归档工具箱")
+	fmt.Println("📷 photools - 摄影师专业 GPS 轨迹匹配、地理逆编码与照片结构化归档工具箱")
 	fmt.Println()
 	fmt.Println("用法:")
 	fmt.Println("  photools                                在交互终端中直接启动可视化 TUI 插件工作台")
@@ -409,6 +414,33 @@ func runRestoreTest(defaultBaseDir string) {
 	fmt.Printf("🎉 成功还原 %d 个原始照片文件！现在可重新进行流水线测试。\n", count)
 }
 
+func runBackup(defaultBaseDir string) {
+	fs := flag.NewFlagSet("backup", flag.ExitOnError)
+	baseDir := fs.String("base-dir", defaultBaseDir, "工作根目录 (包含 Inbox/Inbox_bak)")
+	sourceDir := fs.String("source-dir", "", "待备份源目录 (默认 <base-dir>/Inbox)")
+	backupDir := fs.String("backup-dir", "", "快照目标目录 (默认 <base-dir>/Inbox_bak)")
+
+	_ = fs.Parse(normalizeBoolFlags(fs, os.Args[2:]))
+
+	sDir := *sourceDir
+	if sDir == "" {
+		sDir = filepath.Join(*baseDir, "Inbox")
+	}
+	bDir := *backupDir
+	if bDir == "" {
+		bDir = filepath.Join(*baseDir, "Inbox_bak")
+	}
+
+	fmt.Printf("📸 正在创建待处理照片快照备份 [%s -> %s] ...\n", sDir, bDir)
+	count, err := engine.CreateBackup(sDir, bDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ 备份失败: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("🎉 快照备份成功！共备份 %d 个照片与伴随文件到 [%s]。\n", count, bDir)
+}
+
 func runCompletion(args []string) {
 	if len(args) == 0 {
 		fmt.Println("用法: photools completion [bash|zsh|fish|install]")
@@ -607,12 +639,6 @@ func printGeoDataHelp() {
 }
 
 func runGeoDataTestCoordinates(lat, lon, alt float64, debug bool) {
-	fmt.Printf("🔍 正在检索经纬度坐标: (%.6f, %.6f)", lat, lon)
-	if alt != 0 {
-		fmt.Printf(" [海拔: %.1fm]", alt)
-	}
-	fmt.Println()
-
 	rg := geocoding.GetDefault()
 	if !rg.IsInitialized() {
 		fmt.Println("⚙️  检测到首次冷启动，正在装载离线高精地理空间索引...")
@@ -630,194 +656,40 @@ func runGeoDataTestCoordinates(lat, lon, alt float64, debug bool) {
 	loc, bestPt, distKm, debugStats, loadStats := rg.LookupDetailedWithDebug(lat, lon, 5)
 	queryDur := time.Since(qStart)
 
-	if loc == nil {
-		fmt.Println("❌ 未在离线地理库中匹配到有效地点")
+	if !debug {
+		if loc == nil {
+			fmt.Println("❌ 未在离线地理库中匹配到有效地点")
+			return
+		}
+		fmt.Printf("🔍 正在检索经纬度坐标: (%.6f, %.6f)", lat, lon)
+		if alt != 0 {
+			fmt.Printf(" [海拔: %.1fm]", alt)
+		}
+		fmt.Println("\n\n📍 【逆地理编码匹配结果】")
+		fmt.Printf("  • 国家:       %s (%s)\n", loc.Country, loc.CountryCode)
+		if loc.Province != "" {
+			fmt.Printf("  • 省份/州:    %s\n", loc.Province)
+		}
+		if loc.City != "" {
+			fmt.Printf("  • 城市/地区:  %s\n", loc.City)
+		}
+		if loc.District != "" {
+			fmt.Printf("  • 区县/POI:   %s\n", loc.District)
+		}
+		if loc.Timezone != "" {
+			fmt.Printf("  • IANA时区:   %s\n", loc.Timezone)
+		}
+		if loc.Elevation != 0 {
+			fmt.Printf("  • 地形海拔:   %d 米\n", loc.Elevation)
+		}
+		fmt.Printf("  • 物理距离:   %.2f km\n", distKm)
+		fmt.Printf("  • 数据源:     %s\n", loc.Source)
+		fmt.Printf("  • 规范全称:   %s\n", loc.FormatSummary())
 		return
 	}
 
-	fmt.Println("\n📍 【逆地理编码匹配结果】")
-	fmt.Printf("  • 国家:       %s (%s)\n", loc.Country, loc.CountryCode)
-	if loc.Province != "" {
-		fmt.Printf("  • 省份/州:    %s\n", loc.Province)
-	}
-	if loc.City != "" {
-		fmt.Printf("  • 城市/地区:  %s\n", loc.City)
-	}
-	if loc.District != "" {
-		fmt.Printf("  • 区县/POI:   %s\n", loc.District)
-	}
-	if loc.Timezone != "" {
-		fmt.Printf("  • IANA时区:   %s\n", loc.Timezone)
-	}
-	if loc.Elevation != 0 {
-		fmt.Printf("  • 地形海拔:   %d 米\n", loc.Elevation)
-	}
-	fmt.Printf("  • 物理距离:   %.2f km\n", distKm)
-	fmt.Printf("  • 数据源:     %s\n", loc.Source)
-	fmt.Printf("  • 规范全称:   %s\n", loc.FormatSummary())
-
-	if debug {
-		fmt.Println("\n🛠️  【空间索引搜索诊断 (Debug)】")
-		fmt.Printf("  • 离线库总点数:   %d 个 (内置: %d, 用户自定义: %d)\n",
-			loadStats.TotalPoints, loadStats.BuiltinPoints, loadStats.CustomPoints)
-		if len(loadStats.Packs) > 0 {
-			fmt.Printf("  • 外挂大洲数据包: %d 个\n", len(loadStats.Packs))
-			for _, pk := range loadStats.Packs {
-				fmt.Printf("    - %-20s: %6d 点位 (%.1f MB, 加载 %.2fms)\n",
-					pk.Name, pk.Points, float64(pk.SizeBytes)/(1024*1024), float64(pk.LoadTime.Microseconds())/1000.0)
-			}
-		}
-		fmt.Printf("  • KD-Tree建树耗时: %.2f ms\n", float64(loadStats.TreeBuildTime.Microseconds())/1000.0)
-		fmt.Printf("  • 数据库全量冷启:  %.2f ms\n", float64(loadStats.TotalInitTime.Microseconds())/1000.0)
-		fmt.Printf("  • KD-Tree遍历节点: %d 次 (剪枝率: %.2f%%)\n", debugStats.VisitedNodes, debugStats.PruneRate*100)
-		fmt.Printf("  • 3D点位检索总耗时: %.4f ms (%d µs)\n",
-			float64(queryDur.Nanoseconds())/1e6, queryDur.Microseconds())
-
-		if len(debugStats.TopCandidates) > 0 {
-			fmt.Println("\n🗺️  【Top-5 最近邻拓扑候选点】")
-			for i, c := range debugStats.TopCandidates {
-				prefix := " "
-				if i == 0 {
-					prefix = "★"
-				}
-				pt := c.Point
-				displayName := pt.NameZH
-				if displayName == "" {
-					displayName = pt.Name
-				}
-				nameDesc := displayName
-				if pt.Name != "" && pt.Name != displayName {
-					nameDesc = fmt.Sprintf("%s (%s)", displayName, pt.Name)
-				}
-
-				featureDesc := formatFeatureCodeZH(pt.FeatureClass, pt.FeatureCode)
-				locHierarchy := formatPointLocation(&pt)
-
-				var metaParts []string
-				metaParts = append(metaParts, fmt.Sprintf("坐标: (%.6f, %.6f)", pt.Lat, pt.Lon))
-				if pt.DEM != 0 {
-					metaParts = append(metaParts, fmt.Sprintf("高程: %dm", pt.DEM))
-				} else if pt.Elevation != 0 {
-					metaParts = append(metaParts, fmt.Sprintf("海拔: %dm", pt.Elevation))
-				}
-				if pt.GeoNameID != 0 {
-					metaParts = append(metaParts, fmt.Sprintf("ID: %d", pt.GeoNameID))
-				}
-				if pt.Source != "" {
-					metaParts = append(metaParts, pt.Source)
-				}
-
-				fmt.Printf("  %s [%d] 距离 %6.2f km ➔ %s [%s]\n", prefix, i+1, c.DistanceKm, nameDesc, featureDesc)
-				fmt.Printf("        • 归属: %s\n", locHierarchy)
-				fmt.Printf("        • %s\n", strings.Join(metaParts, " | "))
-			}
-		}
-
-		if bestPt != nil {
-			rawJSON, _ := json.MarshalIndent(bestPt, "  ", "  ")
-			fmt.Printf("\n📄 【底层命中点位原始 GeoPoint 结构】\n  %s\n", string(rawJSON))
-		}
-	}
-}
-
-// formatPointLocation 格式化点位的完整层级归属
-func formatPointLocation(pt *geocoding.GeoPoint) string {
-	var parts []string
-	if pt.Country != "" {
-		parts = append(parts, pt.Country)
-	}
-	if pt.Province != "" && pt.Province != pt.Country {
-		parts = append(parts, pt.Province)
-	}
-	if pt.City != "" && pt.City != pt.Province {
-		parts = append(parts, pt.City)
-	}
-	if pt.District != "" && pt.District != pt.City && pt.District != pt.Province {
-		parts = append(parts, pt.District)
-	}
-	if len(parts) == 0 {
-		return "未知位置"
-	}
-	return strings.Join(parts, " · ")
-}
-
-// formatFeatureCodeZH 将 GeoNames 的 FeatureClass 与 FeatureCode 转换为通俗中文描述
-func formatFeatureCodeZH(fClass, fCode string) string {
-	fClass = strings.ToUpper(strings.TrimSpace(fClass))
-	fCode = strings.ToUpper(strings.TrimSpace(fCode))
-	if fCode == "" {
-		return fClass
-	}
-
-	code := fClass + "/" + fCode
-	switch fCode {
-	case "PPLC":
-		return code + " 首都/国家级行政中心"
-	case "PPLA":
-		return code + " 省会/首府/一级行政中心"
-	case "PPLA2":
-		return code + " 地级市/二级行政中心"
-	case "PPLA3":
-		return code + " 县级市/区县/三级行政中心"
-	case "PPLA4":
-		return code + " 乡镇/四级行政中心"
-	case "PPL":
-		return code + " 城镇/村落/居民点"
-	case "PPLX":
-		return code + " 城市分区/社区"
-	case "ADM1":
-		return code + " 省/州/一级行政区"
-	case "ADM2":
-		return code + " 地级市/二级行政区"
-	case "ADM3":
-		return code + " 县/区/三级行政区"
-	case "ADM4":
-		return code + " 乡/镇/街道/四级行政区"
-	case "MT", "PK":
-		return code + " 山峰/山脉"
-	case "MTS", "PKS":
-		return code + " 群山/山系"
-	case "PASS", "GAP":
-		return code + " 山口/公路垭口/峡口"
-	case "GLCR":
-		return code + " 冰川/冰原"
-	case "VLY":
-		return code + " 峡谷/山谷"
-	case "LK", "LKS":
-		return code + " 湖泊/水库/水域"
-	case "STM", "RVR":
-		return code + " 河流/溪流/水系"
-	case "FLL":
-		return code + " 瀑布/跌水"
-	case "BAY":
-		return code + " 海湾/海港"
-	case "ISL", "ISLS":
-		return code + " 岛屿/群岛"
-	case "PT":
-		return code + " 岬角/海角/地角"
-	case "CLIFF":
-		return code + " 悬崖/断崖"
-	case "PRK", "RES":
-		return code + " 国家公园/自然保护区/名胜区"
-	case "TMPL", "CH", "MSQ":
-		return code + " 寺庙/道观/教堂/宗教遗迹"
-	case "MNMT", "RUIN", "HIST":
-		return code + " 历史古迹/纪念碑/遗址"
-	case "BDG":
-		return code + " 桥梁/跨海大桥"
-	case "AIRP":
-		return code + " 机场/航站区"
-	case "RSTN":
-		return code + " 火车站/高铁站/交通枢纽"
-	case "SCH", "UNIV":
-		return code + " 学校/高等学府"
-	case "HSP":
-		return code + " 医院/医疗设施"
-	case "BLDG":
-		return code + " 地标建筑/楼宇"
-	default:
-		return code
-	}
+	report := geocoding.FormatDebugReport(lat, lon, alt, loc, bestPt, distKm, debugStats, loadStats, queryDur)
+	fmt.Print(report)
 }
 
 // normalizeBoolFlags 预处理命令行参数，自动将 "-flag true" 或 "--flag false" 合并为 "-flag=true"，
@@ -844,4 +716,20 @@ func normalizeBoolFlags(fs *flag.FlagSet, args []string) []string {
 		normalized = append(normalized, arg)
 	}
 	return normalized
+}
+
+func runInspect(args []string) {
+	if len(args) == 0 {
+		fmt.Println("用法: photools inspect <照片路径>")
+		os.Exit(1)
+	}
+	filePath := args[len(args)-1]
+	meta, err := exiftool.InspectPhotoMetadata(exiftool.DefaultRunner(), filePath)
+	defer exiftool.CloseDefaultPool()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "读取照片元数据失败: %v\n", err)
+		os.Exit(1)
+	}
+	data, _ := json.MarshalIndent(meta, "", "  ")
+	fmt.Println(string(data))
 }

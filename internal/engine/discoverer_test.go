@@ -84,6 +84,42 @@ func TestDiscoverer_DiscoverAssets(t *testing.T) {
 	}
 }
 
+func TestDiscoverer_ShieldsBackupAndSystemDirs(t *testing.T) {
+	tempDir := t.TempDir()
+
+	files := []string{
+		"Inbox/valid.NEF",
+		"Inbox/valid.JPG",
+		"Inbox_bak/backup.NEF",
+		"Inbox_bak/backup.JPG",
+		"Inbox/sub_bak/bak.NEF",
+		"Processed/2026/0825/archived.NEF",
+		"GPX/track.gpx",
+		"Logs/app.log",
+		".hidden/hidden.NEF",
+	}
+
+	for _, f := range files {
+		fullPath := filepath.Join(tempDir, f)
+		_ = os.MkdirAll(filepath.Dir(fullPath), 0o755)
+		_ = os.WriteFile(fullPath, []byte("test"), 0o644)
+	}
+
+	d := NewDiscoverer([]string{"nef"})
+	groups, err := d.Discover(tempDir)
+	if err != nil {
+		t.Fatalf("Discover 返回错误: %v", err)
+	}
+
+	if len(groups) != 1 {
+		t.Fatalf("期望只发现 1 个资产组，实际发现 %d 个: %+v", len(groups), groups)
+	}
+
+	if groups[0].BaseName != "valid" {
+		t.Errorf("期望发现 valid，实际发现: %s", groups[0].BaseName)
+	}
+}
+
 func TestListGPXFiles(t *testing.T) {
 	tempDir := t.TempDir()
 

@@ -1,4 +1,4 @@
-# 📸 PhotoTools 项目持久化记忆与核心架构规约 (GEMINI.md)
+# 📸 photools 项目持久化记忆与核心架构规约 (GEMINI.md)
 
 本文档作为 AI Agent 在本工作区（`/Users/vincent/Pictures/GPS`）的**唯一核心持久化记忆、技术规范与架构约束文件（Single Source of Truth）**。后续所有新增功能、架构演进、代码重构或测试均必须严格遵守本文档。
 
@@ -48,7 +48,8 @@
      - 默认推算窗口 15m（支持 `--interpolate-window` 自定义），开启 `--allow-no-gps` 时超出窗口安全跳过而不阻断流水线。
 3. **`reverse_geocode` (Priority 20 · 阶段 3)**:
    - 基于 3D KD-Tree 离线高精空间索引；
-   - 写入国家、省份、城市、区县、风景区 POI 中文元数据（IPTC/XMP）。
+   - 写入国家、省份、城市、区县、风景区 POI 中文元数据（IPTC/XMP）；
+   - **离线地理数据包终端安装规约**：为保证地理数据库来源准确性、网络完整性与数据源校验，离线数据包严禁在 GUI 客户端内隐式下载安装，必须由使用者在终端（CLI）中显式执行 `photools geodata install <target>` 安装。GUI 仅负责状态探测、命令复制与 3D KD-Tree 坐标反查测试。
 4. **`date_archive` (Priority 100 · 阶段 4)**:
    - 依据原始拍摄日期规范化重命名；
    - 原子安全归档至 `Processed/YYYY/MMDD/`（破坏性移动插件，必须具备最低优先级）。
@@ -59,7 +60,8 @@
   - 阶段 1 未命中 GPX 轨迹时，若流水线配置了阶段 2 插值插件，编排器平滑交接，严禁提前硬熔断。
 - **全生命周期 `sync.Once` 与零冗余进程机制**：
   - 各插件 `Init()` 强制采用 `sync.Once` 缓存环境自检与 ExifTool 探针结果，预检与执行阶段毫秒级直通；
-  - 离线地理数据包与 KD-Tree 建树全局单例装载一次，杜绝重复 I/O 与建树开销。
+  - 离线地理数据包与 KD-Tree 建树全局单例装载一次，杜绝重复 I/O 与建树开销；
+  - **ExifTool Stay-Open 常驻守护进程池 (`DefaultRunner`)**：生产环境默认启用常驻进程池（`StayOpenPool`），通过 `exiftool -stay_open True -@ -` 消除重复 `fork/exec` 子进程开销，单次读取开销从 ~30ms 骤降至 1~2ms，并具备进程崩溃自愈与优雅退出能力。
 - **软降级容错 (`--allow-no-gps`)**：彻底无 GPS 照片在逆地理阶段良性跳过（不产生阻塞 Issue），安全进入阶段 4 按拍摄日期规范归档；
 - **并发与待处理报告**：按 basename 资产组并发处理，处理中断或待补资产自动生成详尽的 Markdown 原因清单（`Logs/inbox_pending_report_latest.md`）；
 - **全量实时中文日志流落盘 (Real-Time Log Streaming)**：
@@ -100,7 +102,7 @@
 
 ## 6. 未来新增/重构能力插件标准开发闭环规范 (Plugin Development SOP)
 
-未来任何时候为 PhotoTools 扩展或重构能力插件，AI Agent **必须无条件、按序且 100% 完整执行以下 7 步闭环流程**：
+未来任何时候为 photools 扩展或重构能力插件，AI Agent **必须无条件、按序且 100% 完整执行以下 7 步闭环流程**：
 
 1. **`internal/domain/capability.go`**：注册 `CapabilityID` 常量并实现 `Capability` 接口（包含 `SupportedOptions()` 与 `Configure()`）；
 2. **`internal/capabilities/<plugin>/`**：在能力包内部实现业务逻辑、自描述配置契约 `SupportedOptions()` 与 `Configure()`，并提供独立单元测试；
@@ -109,3 +111,17 @@
 5. **`cmd/photools/` & `internal/completion/`**：增加 CLI 选项，并**100% 同步维护 Zsh / Bash / Fish Tab 自动补全脚本**；
 6. **`internal/tui/`**：在 TUI 注册插件项、分配快捷键（如 `[1/2/3/4]`）、光标空格勾选，由自描述 Schema 自动渲染专属设置面板，同步更新 `model_test.go`；
 7. **规约与持久化文档同步**：同步更新 `GEMINI.md` 与 `README.md`。
+
+---
+
+## 7. macOS 原生客户端与跨语言 (C-Shared FFI) 开发规约
+
+1. **架构文档**：所有 macOS 相关的系统分层、C ABI 导出符号、内存管理契约、EXIF 解析流水线与 UI/UX 规范统一维护在 [`docs/MACOS_CLIENT_TECHNICAL_DESIGN.md`](docs/MACOS_CLIENT_TECHNICAL_DESIGN.md)；
+2. **双引擎直通与降级**：
+   - 优先通过 `libphotools.dylib` 进行进程内 C-Shared FFI 极速直通（~0.1ms，单例常驻）；
+   - 缺失动态库时必须平滑无缝降级至 CLI 异步子进程模式，严禁界面崩溃；
+3. **C-ABI 内存安全绝对纪律**：
+   - 所有 Go 端 `C.CString` 返回给 Swift 的指针，Swift 端必须通过 `defer { fnFreeString?(ptr) }` 释放，严禁内存泄漏或野指针重复释放；
+4. **主资产与排序**：
+   - 资产列表必须以 `PhotoAssetGroup`（配套单元组）为核心展示单位；
+   - 扫描阶段必须提取主文件 `fileModificationDate`，默认提供时间升序/降序及文件名升序/降序多维排序。

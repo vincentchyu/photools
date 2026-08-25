@@ -1,286 +1,316 @@
-[简体中文](#photo-processing) | [English](#photo-processing-en)
+# 📸 photools
 
-<h1 id="photo-processing">photo-processing</h1>
+<p align="center">
+  <img src="img/AppIcon.png" width="128" height="128" alt="photools App Icon" style="border-radius: 28px; box-shadow: 0 12px 30px rgba(0,0,0,0.35);" />
+</p>
 
-这是一个面向摄影师工作流的自动化处理工具集，基于**插件化能力架构（Capability Architecture）**与**分阶段屏障调度器（Phased Priority Scheduler）**构建，提供四大核心能力：
-1. **GPS 轨迹匹配与修正 (`gpx_matching` · P10)**：从相机同步照片后，结合移动设备导出的 `GPX` 轨迹，批量匹配并写入 RAW 经纬度并同步至 JPG/XMP。
-2. **GPS 智能邻近推断与时间插值 (`gps_interpolate` · P15)** ✨：对未命中 GPX 轨迹的照片，根据同批次前后邻近照片的时间差做球面大圆线性插值或同机位邻近推断，自动补全 GPS 坐标。
-3. **离线逆地理编码与地名打标 (`reverse_geocode` · P20)**：基于 3D KD-Tree 空间加速索引，将国家、省、市、区、POI 等中文地名写入 IPTC/XMP 元数据。
-4. **按拍摄日期归档与规范重命名 (`date_archive` · P100)**：提取 EXIF 拍摄日期，规范重命名并在 `Processed/YYYY/MMDD/` 目录下安全原子归档。
+<p align="center">
+  <b>High-Performance Automated Photo Processing, GPS Interpolation & Offline Geocoding Toolkit</b>
+</p>
 
-项目当前采用 `Go CLI + TUI + exiftool` 的方式工作，重点解决“导入电脑后的元数据补充、地名解析与文件整理”环节，不扩展成复杂的 DAM 或后期修图系统。
+<p align="center">
+  <a href="README.md"><b>English</b></a> | <a href="README_zh.md"><b>简体中文</b></a>
+</p>
 
-![整理后的轨迹与图片效果](static/img.png)
-
-## 核心特性与架构设计
-
-- **四大能力解耦**：每个能力独立实现 `Capability` 接口，各自可独立调用，亦可自由组合；
-- **GPS 丢失智能自愈**：通过前后照片时间权重自动推算坐标（默认推算窗口 15 分钟，支持自定义）；
-- **容错降级策略 (`--allow-no-gps`)**：对彻底无 GPS 照片支持跳过地名打标、直接按拍摄日期规范归档；
-- **分阶段屏障调度 (Phased Priority Scheduler)**：
-  - 各插件按 `Priority` 优先级数值划分阶段（Phase 1 ➔ Phase 2 ➔ Phase 3 ➔ Phase 4）；
-  - 全量照片在当前阶段完成元数据清洗后才穿过同步屏障，确保在进入归档移动前元数据彻底闭环，杜绝文件竞争；
-- **配置文件持久化 (`~/.config/photools/plugins.json`)**：系统自动生成默认配置，支持用户自定义修改优先级数值与启用开关；
-- **TUI 插件化多选工作台**：在交互终端中通过快捷键 `[1/2/3/4]` 自由勾选组合所需能力；
-- **双端支持**：统一的 `photools` CLI 命令行 + 薄 Mac SwiftUI 原生查看器。
-
-详细技术文档与设计规范请查阅：
-- 📖 **[架构与时序图设计文档](docs/ARCHITECTURE_AND_DESIGN.md)**
-- ⚙️ **[配置与设置面板设计文档](docs/CONFIGURATION_AND_SETTINGS_DESIGN.md)**
-- 🛡️ **[ExifTool I/O 读写机制与数据安全设计文档](docs/EXIFTOOL_IO_AND_SAFETY_DESIGN.md)**
-- 🗺️ **[GeoNames 地理数据体系、中文化清洗与 3D KD-Tree 索引设计文档](docs/GEONAMES_AND_GEOCODING_DESIGN.md)**
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat-square&logo=go" alt="Go Version" />
+  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-black?style=flat-square&logo=apple" alt="Platform" />
+  <img src="https://img.shields.io/badge/Architecture-Modular%20Capability%20Pipeline-blue?style=flat-square" alt="Architecture" />
+  <img src="https://img.shields.io/badge/Engine-ExifTool%20Stay--Open-brightgreen?style=flat-square" alt="ExifTool" />
+  <img src="https://img.shields.io/badge/Spatial%20Index-3D%20KD--Tree-orange?style=flat-square" alt="KD-Tree" />
+</p>
 
 ---
 
-## 目录结构
+## 🌟 Overview
 
-```text
-GPS/
-├── cmd/photools/          # 统一 CLI 工具入口
-├── docs/                  # 系统架构、配置设计与底层安全设计文档
-├── macos/PhotoToolsApp/   # Mac 原生 SwiftUI 工作台
-├── internal/              # 内部核心逻辑
-│   ├── capabilities/      # 四大独立能力插件 (gpxmatch / gpsinterpolate / reversegeocode / datearchive)
-│   ├── config/            # 插件优先级与持久化配置管理
-│   ├── pipeline/          # 分阶段屏障流水线编排器 (Orchestrator)
-│   ├── domain/            # 领域模型 (Capability, AssetContext, Event)
-│   ├── geocoding/         # 离线 3D KD-Tree 逆地理空间索引
-│   ├── geodata/           # 大洲高精离线地理数据包管理器
-│   ├── exiftool/          # ExifTool 交互与元数据操作
-│   └── engine/            # 资产发现、并发池与归档引擎
-├── Inbox/                 # 相机同步到电脑后的待处理照片
-├── GPX/                   # 移动设备导出的轨迹文件
-├── Processed/             # 按拍摄日期归档后的照片
-├── Logs/                  # 实时中文运行日志 (photools_latest.log) 与待处理报告 (inbox_pending_report_latest.md)
-└── GEMINI.md              # 项目核心架构规约与持久化记忆 (Single Source of Truth)
-```
+**photools** is an automated, high-performance photo processing pipeline engineered specifically for photographers (supporting Nikon RAW `.NEF`, Sony `.ARW`, Canon `.CR2/.CR3`, Fuji `.RAF`, Leica `.DNG`, Apple ProRAW, and high-quality JPGs).
+
+It eliminates the tedious manual friction after importing photos to your computer:
+1. **GPX Track Matching**: Matches camera timestamps against mobile GPX tracks with sub-second precision;
+2. **GPS Intelligent Interpolation**: Recovers missing GPS coordinates via spherical great-circle time-weighted interpolation;
+3. **Offline 3D KD-Tree Reverse Geocoding**: Embeds 5-tier Chinese administrative metadata (Country, Province, City, District, POI / Scenic Area) without internet;
+4. **Atomic Date-Based Archiving**: Automatically cleans, renames (`YYYY-MM-DD-basename`), and archives paired assets into `Processed/YYYY/MMDD/`.
 
 ---
 
-## 依赖要求
+## 🖥️ macOS Native Application Showcase
 
-- Go `1.21+`
-- [ExifTool](https://exiftool.org/)
+photools features a high-performance native macOS desktop application built with SwiftUI and Go C-Shared FFI direct engine integration (`libphotools.dylib`, ~0.1ms latency). It includes **real-time Chinese & English language switching without restarting**, live EXIF photo inspection, and one-click snapshot backups.
 
-先确认环境可用：
+### 1. Multi-Phase Pipeline Dashboard & Real-Time Console
+> Multi-barrier pipeline execution dashboard providing granular controls for **GPX track matching**, **GPS intelligent interpolation**, **offline reverse geocoding**, and **date-based archiving** with a real-time event streaming console.
 
-```bash
-go version
-exiftool -ver
-```
+<p align="center">
+  <img src="img/en/1-Pipeline-Dashboard.png" alt="Pipeline Dashboard & Real-Time Console" width="100%" />
+</p>
 
 ---
 
-## 使用方式
+### 2. Inbox Photos Management & Live EXIF Inspector
+> High-performance photo gallery with multi-criteria filtering, paired RAW+JPG group synchronization, deep optical shooting parameters (Shutter, Aperture, ISO, Lens), and instant 3D KD-Tree reverse geocoding preview.
 
-### 1. 交互式 TUI 终端工作台（🌟 强烈推荐）
+<p align="center">
+  <img src="img/en/2-Inbox-Photos-Inspector.png" alt="Inbox Photos & Live EXIF Inspector" width="100%" />
+</p>
 
-直接在终端运行（无需记复杂参数）：
-```bash
-./photools
+---
+
+### 3. Built-In Technical Documentation & Offline Geodata Tools
+> **Left**: Comprehensive offline architecture specifications, memory rules, and user guides.<br/>
+> **Right**: Built-in 3D KD-Tree offline geodata manager with continent dataset status and sub-millisecond coordinate lookup testing.
+
+<p align="center">
+  <img src="img/en/3-Guide-And-Geocoding.png" alt="User Guides & Offline Geodata Manager" width="100%" />
+</p>
+
+---
+
+## ⚡ Core Capabilities (The 4 Pillars)
+
 ```
-或显式进入 TUI：
+[Inbox RAW/JPG] ──▶ 1. GPX Matching ──▶ 2. GPS Interpolate ──▶ 3. Reverse Geocode ──▶ 4. Date Archive ──▶ [Processed/YYYY/MMDD/]
+                       (P10 · Phase 1)     (P15 · Phase 2)        (P20 · Phase 3)       (P100 · Phase 4)
+```
+
+| Pillar / Plugin | Priority | Phase | Description |
+| :--- | :---: | :---: | :--- |
+| **`gpx_matching`** | `P10` | `Phase 1` | **GPX Track Matching**: Matches photo timestamps with GPX tracks, writes coordinates to Primary RAW, and synchronizes to companion JPG/XMP files. |
+| **`gps_interpolate`** | `P15` | `Phase 2` | **Intelligent Time-Weighted Interpolation**: Recovers missing GPS coordinates via spherical great-circle interpolation or nearest-station inheritance using an $O(\log K)$ nanosecond `AnchorIndex`. |
+| **`reverse_geocode`** | `P20` | `Phase 3` | **Offline 3D KD-Tree Geocoding**: Queries offline multi-continent datasets to tag Country, Province, City, District, and Scenic Spot POIs into IPTC/XMP tags. |
+| **`date_archive`** | `P100` | `Phase 4` | **Date-Based Atomic Archiving**: Extracts `DateTimeOriginal`, standardizes filenames (`YYYY-MM-DD-basename`), and moves companion units into `Processed/YYYY/MMDD/`. |
+
+---
+
+## 🚀 Interactive Terminal TUI Workbench
+
+For keyboard-driven workflows, photools includes a rich interactive TUI powered by Bubble Tea:
+
 ```bash
+# Launch interactive TUI workbench
 ./photools tui
 ```
 
-#### 启动阶段：插件并发自检与渐进式装载 (Progressive Initialization)
-启动时，系统自动并发执行各插件的 `Init` 自检与流式装载，实时显示步骤与进度条：
 ```text
 ╭────────────────────────────────────────────────────────────────────────────╮
-│ ⚡ 流水线能力插件自检与装载 (Capabilities Self-Check & Loading)...         │
-│                                                                            │
-│  [✔] 就绪   GPX 轨迹匹配与 GPS 修正 (GPX Matching)                         │
-│      └─ [环境自检] ExifTool 核心引擎就绪 (v12.76)                           │
-│                                                                            │
-│  [⚙️] 装载中 逆地理编码与地名元数据写入 (Reverse Geocode)                   │
-│      └─ [装载离线数据包] 正在解析离线地理包 [china.json] (3/8)...           │
-│      ████████████████████░░░░░░░░░░░░░░░░   62%                            │
-│                                                                            │
-│  [✔] 就绪   按拍摄日期归档与规范重命名 (Date Archive)                      │
-│      └─ [环境自检] 拍摄日期归档引擎与规范化重命名模板已就绪                 │
-│                                                                            │
-│ 已就绪: 2 / 3 个能力插件                                                   │
-│ ⚙️ 系统正在并发自检环境与流式装载本地离线地理数据包，请稍候...             │
+│ ⚡ Capabilities Self-Check & Progressive Loading...                       │
+│  [✔] Ready   GPX Track Matching & GPS Sync (ExifTool v12.76)               │
+│  [✔] Ready   GPS Spherical Time-Weighted Interpolation (Window: 15m)       │
+│  [⚙️] Loading Offline Reverse Geocoding (china.json · 927,314 points 62%)   │
+│  [✔] Ready   Date-based Atomic Archive & Normalization                     │
 ╰────────────────────────────────────────────────────────────────────────────╯
 ```
 
-#### 主菜单：能力勾选与健康状态看板 (Workspace & Capabilities)
-初始化完成后平滑过渡到主工作台，每个插件卡片深度融合自检环境与功能说明：
-```text
-当前工作区: /Users/vincent/Pictures/GPS
-Inbox:  12 组   |  GPX:  2 个   |  已归档:  85 组
-
-🧩 摄影处理流水线能力插件 (按 [1/2/3/4/空格] 切换勾选，按 [o] 调出当前插件设置，[s] 全局设置)：
-
- ▶ [✔]  P10 · 阶段 1   GPX 轨迹匹配与 GPS 修正 (GPX Matching)
-     ├─ 环境自检:  ✔ 正常  ExifTool 核心引擎就绪 (v12.76)
-     └─ 功能说明: 从 GPX 目录读取轨迹，为 RAW 写入经纬度并同步到 JPG/XMP
-
-   [ ]  P15 (未激活)   GPS 智能邻近推断与时间插值 (GPS Interpolation)  推算窗口:15m
-     ├─ 环境自检:  ✔ 正常  GPS 插值引擎就绪 (推算窗口: 15m, ExifTool v12.76)
-     └─ 功能说明: 根据同批次前后邻近照片时间权重，自动推算补全无轨迹照片 GPS 坐标
-
-   [✔]  P20 · 阶段 2   逆地理编码与地名元数据写入 (Reverse Geocode)
-     ├─ 环境自检:  ✔ 正常  离线地理库就绪 (已加载 927,314 点位 / 8 个数据包，建树 0.28s)
-     └─ 功能说明: 根据 GPS 坐标检索国家/省/市/区/POI，写入 IPTC/XMP 地名元数据
-
-   [✔]  P100 · 阶段 3  按拍摄日期归档与规范重命名 (Date Archive)
-     ├─ 环境自检:  ✔ 正常  拍摄日期归档引擎与规范化重命名模板已就绪
-     └─ 功能说明: 提取 EXIF 拍摄日期，规范重命名并安全归档至 Processed/YYYY/MMDD/
-
-⚙️ 会话配置已载入: ~/.config/photools/plugins.json (按 [o] 调整当前插件专属参数，按 [s] 进入全局设置)
-─────────────────────────────────────────────────────────────────────────────────
- [1/2/3/4/空格] 切换勾选  [o] 插件设置  [s] 全局设置  [a] 全选  [c] 清空  [Enter] 预检执行  [r] 刷新  [q] 退出
-```
-
-- **[1/2/3/4]** 或 **[空格]**：切换对应能力插件开关；
-- **[O]**：调出当前光标选中插件的**专属自描述设置面板**（如调整 P15 插值时间窗口、P10 Geosync、P100 In-Place 模式）；
-- **[S]**：进入**全局环境与安全调度设置**（工作区路径、扁平模式、并发 Worker 数、无 GPS 容错策略、快照备份开关，支持 `[Tab]` 路径智能自动补全）；
-- **[A]**：一键全选；**[C]**：一键清空；
-- **[Enter]**：进入流水线参数全景看板与 Dry-Run 预检清单；再次按 `[Enter]` 正式执行；
-- **[R]**：重新触发插件环境自检并刷新工作区资产。
+- **`[1/2/3/4]` or `[Space]`**: Toggle specific capability plugins.
+- **`[O]`**: Open plugin-specific self-describing configuration modal (e.g. adjust interpolation window, time offset).
+- **`[S]`**: Global settings modal (Workspace path, Flat/In-Place mode, Worker concurrency, Soft-degrade policy) with `[Tab]` path completion.
+- **`[Enter]`**: Trigger Dry-Run inspection, followed by immediate pipeline execution.
 
 ---
 
-### 2. 命令行（CLI）独立与复合模式
+## 🛠️ CLI Usage & Scripting
 
-#### 2.1 复合流水线 (`pipeline`)
-自由勾选开启或关闭任一能力组合：
+### 1. Composite Pipeline (`pipeline`)
 ```bash
-# 执行全部流水线能力 (默认启用 GPX 匹配 + 逆地理 + 归档)
+# Run full automated pipeline (GPX Matching + Geocoding + Date Archiving)
 photools pipeline
 
-# 开启 GPS 智能插值推算 (设定推算时间窗口为 1 小时)
+# Enable GPS intelligent time-weighted interpolation (e.g., 1-hour search window)
 photools pipeline --interpolate=true --interpolate-window=1h
 
-# 启用扁平原地模式（原地扫描、原地逆地理打标并原地规范化重命名）
+# In-Place / Flat Mode (Process, geocode, and standardize directly in the source directory)
 photools pipeline --flat=true --in-place=true
 
-# 软降级容错模式（无 GPS 照片跳过地名打标直接安全归档）
+# Fault-tolerant soft degradation (Allow non-GPS photos to safely archive by date)
 photools pipeline --allow-no-gps=true
 ```
 
-#### 2.2 独立子命令与测试辅助
-- **标准 GPS 修正并归档 (`geotag`)**：
-  ```bash
-  photools geotag
-  photools geotag -geosync +00:00:05 -workers 8 -test
-  ```
-- **独立离线逆地理地名打标 (`geocode`)**：
-  ```bash
-  photools geocode -dir /path/to/Inbox -test
-  ```
-- **独立按拍摄日期整理归档 (`organize-by-date`)**：
-  ```bash
-  photools organize-by-date -source-dir /path/to/source -target-dir /path/to/output -test
-  ```
-- **测试备份模式与一键还原 (`-test` & `restore-test`)**：
-  ```bash
-  # 在任何命令后附加 -test 即可在执行处理前自动快照备份 Inbox 到 Inbox_bak
-  photools pipeline -test
+### 2. Standalone Subcommands
+```bash
+# Geotag with time offset compensation (+5 seconds)
+photools geotag -geosync +00:00:05 -workers 8
 
-  # 测试完毕后，一键将 Inbox_bak 还原回 Inbox，并清理测试产生的 Processed 归档产物
-  photools restore-test -clean
-  ```
-- **离线地理数据包管理 (`geodata`)**：
-  ```bash
-  photools geodata list                   # 查看各大洲离线数据包状态
-  photools geodata install all            # 一键下载并安装全球离线地名数据库
-  photools geodata test 31.2304 121.4737  # 测试指定经纬度反查效果
-  ```
+# Standalone offline reverse geocoding
+photools geocode -dir /path/to/Inbox
+
+# Standalone date-based organizer
+photools organize-by-date -source-dir /path/to/source -target-dir /path/to/output
+
+# Deep EXIF inspection (Exposure parameters, lens model, GPS, IPTC)
+photools inspect /path/to/photo.NEF
 
 ---
 
-### 3. Mac 原生图形工作台
+## 📦 Build & Packaging Guide
 
-轻量 SwiftUI 原生应用，用于可视化查看 `Inbox/GPX/Processed/Logs` 状态：
+### 1. Requirements
+- **Go**: `1.21+`
+- **Swift / Xcode Command Line Tools**: `Swift 5.9+` (for macOS Native App)
+- **ExifTool**: `12.0+` (`brew install exiftool`)
+
+---
+
+### 2. Backend Core Components Build (Go C-Shared & CLI)
+
+The backend is built in Go and provides two core targets:
+
 ```bash
-./script/build_and_run.sh
+# 1. Compile Go C-Shared dynamic library (for Swift GUI in-process FFI, output: dist/libphotools.dylib)
+go build -buildmode=c-shared -o dist/libphotools.dylib ./cmd/photools-cshared
+
+# 2. Compile standalone CLI & TUI binary (output: dist/photools)
+go build -ldflags="-s -w" -o dist/photools ./cmd/photools
+```
+
+> [!NOTE]
+> **Embedded Mapping Dictionaries (`//go:embed data`)**:
+> Administrative division and EN-ZH mapping dictionaries under `internal/geodata/data/` (`admin1CodesASCII_zh.json`, `admin2Codes_zh.json`, `country_codes.json`, etc.) are **automatically embedded into `libphotools.dylib` and the `photools` binary** at compile-time. When distributing the `.dylib` or `.dmg` to other users, these dictionaries are fully bundled and require no manual file copying. (To regenerate dictionaries, run `python3 internal/geodata/data/generate_all.py`).
+
+---
+
+### 3. Offline High-Precision Geodata Installation (Required for Reverse Geocoding)
+
+To enable 3D KD-Tree offline reverse geocoding (e.g. reverse lookup across 715k+ China POIs and administrative names), the corresponding regional database must be installed. **Because of their large file size, coordinates databases are not embedded into the dynamic library and must be installed explicitly in new environments**:
+
+```bash
+# 1. Check local geodata installation status
+./dist/photools geodata status
+
+# 2. Install China high-precision offline geodata (Recommended, saved to ~/.config/photools/geodata/)
+./dist/photools geodata install china
+
+# 3. (Optional) Install other continental datasets on demand
+./dist/photools geodata install asia       # Asia
+./dist/photools geodata install europe     # Europe
+./dist/photools geodata install north-america # North America
 ```
 
 ---
 
-## 插件优先级配置文件 (`plugins.json`)
+### 4. macOS Native App Packaging (`.app` & `.dmg`)
 
-系统在首次启动时会自动在 `~/.config/photools/plugins.json` 生成默认配置：
+photools provides an automated all-in-one packaging script [`script/build_and_run.sh`](script/build_and_run.sh) that compiles the Go C-Shared library (`libphotools.dylib`), builds the Swift GUI, embeds the CLI binary, packages the ExifTool engine runtime, configures `@rpath`, and performs local Ad-hoc code signing:
+
+```bash
+# 1. Build self-contained standalone App Bundle (Output: dist/photoolsApp.app)
+./script/build_and_run.sh --build-only
+
+# 2. Build and launch immediately for testing
+./script/build_and_run.sh run
+
+# 3. Create standard macOS distributable .dmg installer (for distribution)
+hdiutil create -volname "photools" -srcfolder dist/photoolsApp.app -ov -format UDZO dist/photools-macOS.dmg
+```
+
+**App Bundle Output Architecture (`dist/photoolsApp.app`)**:
+```text
+photoolsApp.app/
+└── Contents/
+    ├── MacOS/
+    │   ├── photoolsApp       # Native SwiftUI Executable
+    │   └── photools            # Embedded Go CLI Engine
+    ├── Frameworks/
+    │   └── libphotools.dylib   # In-Process C-Shared FFI Dynamic Library (with embedded mapping dictionaries)
+    ├── Resources/
+    │   ├── docs/               # Technical Guides & Architecture Specs
+    │   └── vendor/exiftool/    # Embedded ExifTool Runtime (Zero external dependency)
+    └── Info.plist
+```
+
+> [!IMPORTANT]
+> **Client Distribution Notes**:
+> When distributed via `.dmg` to other users, `libphotools.dylib` will automatically resolve embedded name translations. If the recipient wants high-precision offline reverse geocoding, they need to run `photools geodata install china` once in their terminal, or have their `~/.config/photools/geodata/` directory pre-provisioned.
+
+---
+
+### 5. Standalone CLI / TUI Compilation & Distribution
+
+To build stripped, high-performance standalone CLI binaries:
+
+```bash
+# Local stripped compilation
+go build -ldflags="-s -w" -o photools ./cmd/photools
+
+# Cross-platform release packaging
+# macOS Apple Silicon (arm64)
+CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/photools-darwin-arm64 ./cmd/photools
+
+# macOS Intel (amd64)
+CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/photools-darwin-amd64 ./cmd/photools
+
+# Linux x86_64 (amd64)
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/photools-linux-amd64 ./cmd/photools
+```
+
+---
+
+## 📊 Performance & Benchmark (Apple Silicon)
+
+Benchmarked on **Apple M1 Max** (`arm64`):
+
+```bash
+go test -run=^$ -bench=. -benchmem ./internal/capabilities/gpsinterpolate/...
+```
+
+| Benchmark Target | Latency / op | Throughput | Memory Alloc |
+| :--- | :---: | :---: | :---: |
+| **`AnchorIndex` Binary Search (10,000 pts)** | **`205 ns/op`** | **`4,870,000 ops/sec`** | `0 B/op` |
+| **`AnchorIndex` Batch Tree Build (1,000 assets)** | **`0.52 ms/op`** | **`1,920 batches/sec`** | `24 KB/op` |
+| **`ExecuteProcess` Per-Photo Interpolation & Ingestion** | **`0.11 ms/op`** | **`8,880 photos/sec`** | `1.2 KB/op` |
+| **`ExifTool` Stay-Open Daemon Pool** | **`1.2 ms/op`** | **`830 reads/sec`** | Zero-fork overhead |
+
+---
+
+## ⚙️ Configuration File (`plugins.json`)
+
+photools automatically generates its persistent configuration at `~/.config/photools/plugins.json`:
 
 ```json
 {
   "plugins": [
     {
       "id": "gpx_matching",
-      "name": "GPX 轨迹匹配与 GPS 修正",
+      "name": "GPX Track Matching",
       "priority": 10,
-      "enabled": true,
-      "description": "从 GPX 目录读取轨迹为 RAW 写入经纬度并同步到 JPG/XMP"
+      "enabled": true
     },
     {
       "id": "gps_interpolate",
-      "name": "GPS 智能邻近推断与时间插值",
+      "name": "GPS Intelligent Interpolation",
       "priority": 15,
       "enabled": true,
-      "description": "根据同批次前后邻近照片时间权重，自动推算补全无轨迹照片 GPS 坐标",
       "options": {
         "window": "15m"
       }
     },
     {
       "id": "reverse_geocode",
-      "name": "逆地理编码与地名元数据写入",
+      "name": "Offline Reverse Geocoding",
       "priority": 20,
-      "enabled": true,
-      "description": "根据 GPS 坐标检索国家/省/市/区/POI，写入 IPTC/XMP 地名元数据"
+      "enabled": true
     },
     {
       "id": "date_archive",
-      "name": "按拍摄日期归档与规范重命名",
+      "name": "Date-Based Normalization Archive",
       "priority": 100,
-      "enabled": true,
-      "description": "提取 EXIF 拍摄日期，规范重命名并安全归档至 Processed/YYYY/MMDD/"
+      "enabled": true
     }
   ]
 }
 ```
 
-- **调度规则**：
-  - 数值越小越优先执行；
-  - **不同 Priority**：分属不同 Phase，按顺序严格串行推进；
-  - **相同 Priority**：归入同一 Phase，在当前阶段内安全并发并行处理。
+---
+
+## 📖 Technical Documentation
+
+- 📖 **[System Architecture & Phased Scheduler Design](docs/ARCHITECTURE_AND_DESIGN.md)**
+- 🍏 **[macOS Native Client Architecture & C-Shared FFI Design](docs/MACOS_CLIENT_TECHNICAL_DESIGN.md)**
+- ⚙️ **[Configuration Schema & Dynamic Settings Panel Design](docs/CONFIGURATION_AND_SETTINGS_DESIGN.md)**
+- 🛡️ **[ExifTool Stay-Open Daemon Pool & Data Safety Design](docs/EXIFTOOL_IO_AND_SAFETY_DESIGN.md)**
+- 🗺️ **[GeoNames Offline Data Pack & 3D KD-Tree Spatial Index Design](docs/GEONAMES_AND_GEOCODING_DESIGN.md)**
 
 ---
 
-## 测试与性能基准 (Testing & Benchmarks)
+## 📄 License
 
-### 1. 单元测试全覆盖
-运行全量测试套件（100% 隔离闭环）：
-```bash
-go test -v ./...
-```
-
-### 2. 空间索引与智能插值基准性能 (Benchmarks)
-在 Apple Silicon (M1 Max) 环境下执行基准测试：
-```bash
-go test -run=^$ -bench=. -benchmem ./internal/capabilities/gpsinterpolate/...
-```
-
-压测性能表现：
-- **`AnchorIndex` 二分检索 (`10,000` 点位)**：`205 ns/op`，吞吐量高达 **`4,870,000 ops/sec`**（近 500 万 QPS）；
-- **`AnchorIndex` 批次索引构建 (`1,000` 资产)**：`0.52 ms/op`，吞吐量达 **`1,920 批次/秒`**；
-- **`ExecuteProcess` 单张插值与动态合入**：`0.11 ms/op`，吞吐量达 **`8,880 张/秒`**。
-
----
-
-<h1 id="photo-processing-en">photo-processing (English)</h1>
-
-An automated photo processing toolkit designed for photographer workflows, built on a **modular Capability Architecture** and a **Phased Priority Scheduler**.
-
-### Core Capabilities:
-1. **GPX Track Matching & Geotagging (`gpx_matching` · P10)**: Matches photos with GPS tracks exported from mobile devices, writes coordinates to RAW, and syncs to JPG/XMP.
-2. **Offline Reverse Geocoding & Location Tagging (`reverse_geocode` · P20)**: Queries an offline 3D KD-Tree spatial index to embed Country, Province, City, District, and POI into IPTC/XMP tags.
-3. **Date-based Normalization & Archiving (`date_archive` · P100)**: Extracts `DateTimeOriginal`, renames files with `YYYY-MM-DD`, and atomically moves companion files to `Processed/YYYY/MMDD/`.
-
-📖 Documentation:
-- **[Architecture & Design Document](docs/ARCHITECTURE_AND_DESIGN.md)**
-- **[Configuration & Settings Design Document](docs/CONFIGURATION_AND_SETTINGS_DESIGN.md)**
-- **[ExifTool I/O & Data Safety Design Document](docs/EXIFTOOL_IO_AND_SAFETY_DESIGN.md)**
+photools is licensed under the [MIT License](LICENSE).

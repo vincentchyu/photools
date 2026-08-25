@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,7 +29,7 @@ func (ExecRunner) CombinedOutput(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).CombinedOutput()
 }
 
-// ReadMetadata 读取照片的基础 EXIF 元数据
+// ReadMetadata 读取基础 EXIF 元数据
 func ReadMetadata(runner CommandRunner, path string) (Metadata, error) {
 	output, err := runner.CombinedOutput(
 		"exiftool", "-m", "-q", "-json", "-DateTimeOriginal", "-OffsetTimeOriginal", "-GPSPosition", "-GPSDateTime",
@@ -499,4 +500,221 @@ func decHemiToDecimal(valStr, hemi string) (float64, error) {
 		val = -val
 	}
 	return val, nil
+}
+
+// ==========================================
+// 4. 完整照片元数据深度检查 (用于 UI 检查器与调试)
+// ==========================================
+
+type DetailedPhotoMetadata struct {
+	FilePath         string        `json:"file_path"`
+	FileName         string        `json:"file_name"`
+	FileSize         string        `json:"file_size"`
+	FileModifyDate   string        `json:"file_modify_date"`
+	CameraMake       string        `json:"camera_make,omitempty"`
+	CameraModel      string        `json:"camera_model,omitempty"`
+	LensModel        string        `json:"lens_model,omitempty"`
+	DateTimeOriginal string        `json:"date_time_original,omitempty"`
+	ExposureTime     string        `json:"exposure_time,omitempty"`
+	FNumber          string        `json:"f_number,omitempty"`
+	ISO              string        `json:"iso,omitempty"`
+	FocalLength      string        `json:"focal_length,omitempty"`
+	ExposureProgram  string        `json:"exposure_program,omitempty"`
+	Latitude         *float64      `json:"latitude,omitempty"`
+	Longitude        *float64      `json:"longitude,omitempty"`
+	Altitude         *float64      `json:"altitude,omitempty"`
+	GPSPosition      string        `json:"gps_position,omitempty"`
+	Country          string        `json:"country,omitempty"`
+	Province         string        `json:"province,omitempty"`
+	City             string        `json:"city,omitempty"`
+	District         string        `json:"district,omitempty"`
+	Title            string        `json:"title,omitempty"`
+	Description      string        `json:"description,omitempty"`
+	RawTags          []ExifTagItem `json:"raw_tags,omitempty"`
+}
+
+type ExifTagItem struct {
+	Group string `json:"group"`
+	Tag   string `json:"tag"`
+	Value string `json:"value"`
+}
+
+// InspectPhotoMetadata 深度检查单张照片的全部 EXIF / IPTC / XMP 元数据
+func InspectPhotoMetadata(runner CommandRunner, path string) (*DetailedPhotoMetadata, error) {
+	output, err := runner.CombinedOutput(
+		"exiftool", "-m", "-q", "-j", "-G1", "-a", "-s", "-c", "%.6f", path,
+	)
+	if err != nil && len(output) == 0 {
+		return nil, fmt.Errorf("exiftool 检查元数据失败: %w", err)
+	}
+
+	cleanOutput := bytes.TrimSpace(output)
+	if len(cleanOutput) == 0 {
+		return nil, errors.New("exiftool 未返回任何元数据")
+	}
+
+	// 容错剥离前缀
+	jsonStart := bytes.IndexByte(cleanOutput, '[')
+	if jsonStart >= 0 {
+		if end := bytes.LastIndexByte(cleanOutput, ']'); end > jsonStart {
+			cleanOutput = cleanOutput[jsonStart : end+1]
+		}
+	}
+
+	var records []map[string]any
+	if err := json.Unmarshal(cleanOutput, &records); err != nil || len(records) == 0 {
+		return nil, fmt.Errorf("解析 exiftool 检查输出失败: %w (原始: %s)", err, string(cleanOutput))
+	}
+
+	dict := records[0]
+
+	strVal := func(keys ...string) string {
+		for _, k := range keys {
+			for dk, dv := range dict {
+				tagPart := dk
+				if idx := strings.Index(dk, ":"); idx >= 0 {
+					tagPart = dk[idx+1:]
+				}
+				if strings.EqualFold(dk, k) || strings.EqualFold(tagPart, k) {
+					s := fmt.Sprintf("%v", dv)
+					s = strings.TrimSpace(s)
+					if s != "" && s != "<nil>" && s != "0" && s != "undef" && s != "-" {
+						return s
+					}
+				}
+			}
+		}
+		return ""
+	}
+
+	floatVal := func(keys ...string) *float64 {
+		for _, k := range keys {
+			for dk, dv := range dict {
+				tagPart := dk
+				if idx := strings.Index(dk, ":"); idx >= 0 {
+					tagPart = dk[idx+1:]
+				}
+				if strings.EqualFold(dk, k) || strings.EqualFold(tagPart, k) {
+					switch v := dv.(type) {
+					case float64:
+						return &v
+					case float32:
+						fv := float64(v)
+						return &fv
+					case int:
+						fv := float64(v)
+						return &fv
+					case int64:
+						fv := float64(v)
+						return &fv
+					case string:
+						s := strings.TrimSpace(v)
+						s = strings.TrimSuffix(s, " Above Sea Level")
+						s = strings.TrimSuffix(s, " Below Sea Level")
+						s = strings.TrimSuffix(s, " m")
+						s = strings.TrimSpace(s)
+						isNeg := strings.HasSuffix(strings.ToUpper(s), "S") || strings.HasSuffix(strings.ToUpper(s), "W")
+						s = strings.TrimSuffix(s, " N")
+						s = strings.TrimSuffix(s, " S")
+						s = strings.TrimSuffix(s, " E")
+						s = strings.TrimSuffix(s, " W")
+						s = strings.TrimSpace(s)
+						if fv, err := strconv.ParseFloat(s, 64); err == nil {
+							if isNeg && fv > 0 {
+								fv = -fv
+							}
+							return &fv
+						}
+					}
+				}
+			}
+		}
+		return nil
+	}
+
+	makeStr := strVal("EXIF:Make", "Make", "QuickTime:Make")
+	modelStr := strVal("EXIF:Model", "Model", "QuickTime:Model")
+	lensStr := strVal("EXIF:LensModel", "XMP:LensModel", "MakerNotes:Lens", "MakerNotes:LensType", "LensModel", "Composite:LensSpec", "Composite:LensID", "Lens")
+	dateStr := strVal("EXIF:DateTimeOriginal", "XMP:DateTimeOriginal", "QuickTime:CreateDate", "DateTimeOriginal")
+	expStr := strVal("EXIF:ExposureTime", "Composite:ShutterSpeed", "ExposureTime", "ShutterSpeed")
+	fnStr := strVal("EXIF:FNumber", "Composite:Aperture", "FNumber", "ApertureValue", "Aperture")
+	isoStr := strVal("EXIF:ISO", "EXIF:ISOSpeedRatings", "MakerNotes:ISO", "ISO")
+	focalStr := strVal("EXIF:FocalLength", "Composite:FocalLength35efl", "EXIF:FocalLengthIn35mmFormat", "FocalLength")
+	progStr := strVal("EXIF:ExposureProgram", "ExposureProgram")
+
+	latVal := floatVal("GPS:GPSLatitude", "Composite:GPSLatitude", "GPSLatitude")
+	lonVal := floatVal("GPS:GPSLongitude", "Composite:GPSLongitude", "GPSLongitude")
+	altVal := floatVal("GPS:GPSAltitude", "Composite:GPSAltitude", "GPSAltitude")
+	posStr := strVal("Composite:GPSPosition", "GPS:GPSPosition", "GPSPosition")
+
+	// 如果经纬度解析为 nil 但有 GPSPosition 字符串，尝试反解
+	if (latVal == nil || lonVal == nil) && posStr != "" {
+		if lat, lon, err := ParseCoordinates(posStr); err == nil {
+			latVal = &lat
+			lonVal = &lon
+		}
+	}
+
+	countryStr := strVal("XMP:Country", "IPTC:Country-PrimaryLocationName", "Country")
+	provStr := strVal("XMP:State", "IPTC:Province-State", "State", "Province")
+	cityStr := strVal("XMP:City", "IPTC:City", "City")
+	distStr := strVal("XMP:Location", "IPTC:Sub-location", "Sublocation", "District")
+	titleStr := strVal("XMP:Title", "IPTC:ObjectName", "Title")
+	descStr := strVal("XMP:Description", "IPTC:Caption-Abstract", "Description")
+
+	fileSizeStr := strVal("File:FileSize", "FileSize")
+	modDateStr := strVal("File:FileModifyDate", "FileModifyDate")
+
+	var rawTags []ExifTagItem
+	for k, v := range dict {
+		if k == "SourceFile" {
+			continue
+		}
+		parts := strings.SplitN(k, ":", 2)
+		group := "General"
+		tag := k
+		if len(parts) == 2 {
+			group = parts[0]
+			tag = parts[1]
+		}
+		rawTags = append(rawTags, ExifTagItem{
+			Group: group,
+			Tag:   tag,
+			Value: fmt.Sprintf("%v", v),
+		})
+	}
+
+	sort.Slice(rawTags, func(i, j int) bool {
+		if rawTags[i].Group == rawTags[j].Group {
+			return rawTags[i].Tag < rawTags[j].Tag
+		}
+		return rawTags[i].Group < rawTags[j].Group
+	})
+
+	return &DetailedPhotoMetadata{
+		FilePath:         path,
+		FileName:         filepath.Base(path),
+		FileSize:         fileSizeStr,
+		FileModifyDate:   modDateStr,
+		CameraMake:       makeStr,
+		CameraModel:      modelStr,
+		LensModel:        lensStr,
+		DateTimeOriginal: dateStr,
+		ExposureTime:     expStr,
+		FNumber:          fnStr,
+		ISO:              isoStr,
+		FocalLength:      focalStr,
+		ExposureProgram:  progStr,
+		Latitude:         latVal,
+		Longitude:        lonVal,
+		Altitude:         altVal,
+		GPSPosition:      posStr,
+		Country:          countryStr,
+		Province:         provStr,
+		City:             cityStr,
+		District:         distStr,
+		Title:            titleStr,
+		Description:      descStr,
+		RawTags:          rawTags,
+	}, nil
 }

@@ -1,0 +1,209 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Background Shadow -->
+    <filter id="macShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="32" stdDeviation="40" flood-color="#000000" flood-opacity="0.55"/>
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+
+    <!-- Inner Glow & Lighting -->
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="24" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+
+    <filter id="neonGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="12" result="blur1"/>
+      <feGaussianBlur stdDeviation="28" result="blur2"/>
+      <feMerge>
+        <feMergeNode in="blur2"/>
+        <feMergeNode in="blur1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Base Gradients -->
+    <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2A2E39"/>
+      <stop offset="50%" stop-color="#181A22"/>
+      <stop offset="100%" stop-color="#0C0D12"/>
+    </linearGradient>
+
+    <linearGradient id="bodyBorder" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.6"/>
+    </linearGradient>
+
+    <!-- Metallic Rim Gradients -->
+    <linearGradient id="metalRing1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5A6072"/>
+      <stop offset="30%" stop-color="#2D313D"/>
+      <stop offset="70%" stop-color="#6B7285"/>
+      <stop offset="100%" stop-color="#1A1C24"/>
+    </linearGradient>
+
+    <linearGradient id="metalRing2" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#3A3F4D"/>
+      <stop offset="50%" stop-color="#1E2028"/>
+      <stop offset="100%" stop-color="#4A5060"/>
+    </linearGradient>
+
+    <!-- Optical Coating Gradients (Lens Elements) -->
+    <radialGradient id="lensGlass" cx="45%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#0F3854"/>
+      <stop offset="45%" stop-color="#0A1E30"/>
+      <stop offset="80%" stop-color="#050C16"/>
+      <stop offset="100%" stop-color="#02050A"/>
+    </radialGradient>
+
+    <linearGradient id="coatingReflect1" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#00F2FE" stop-opacity="0.65"/>
+      <stop offset="40%" stop-color="#4FACFE" stop-opacity="0.25"/>
+      <stop offset="75%" stop-color="#9B51E0" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </linearGradient>
+
+    <linearGradient id="coatingReflect2" x1="80%" y1="100%" x2="20%" y2="0%">
+      <stop offset="0%" stop-color="#FF0844" stop-opacity="0.4"/>
+      <stop offset="35%" stop-color="#FFB199" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- GPS & Location Neon Gradients -->
+    <linearGradient id="gpsTrackGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F2FE"/>
+      <stop offset="50%" stop-color="#38EF7D"/>
+      <stop offset="100%" stop-color="#11998E"/>
+    </linearGradient>
+
+    <linearGradient id="pinGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FF5252"/>
+      <stop offset="100%" stop-color="#FF1744"/>
+    </linearGradient>
+
+    <linearGradient id="pinHighlight" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Grid Lines -->
+    <linearGradient id="gridGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#00F2FE" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#00F2FE" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 1. Base macOS Rounded Squircle -->
+  <g filter="url(#macShadow)">
+    <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="url(#bodyGrad)"/>
+    <rect x="101" y="101" width="822" height="822" rx="184" ry="184" fill="none" stroke="url(#bodyBorder)" stroke-width="3"/>
+  </g>
+
+  <!-- 2. Subtle Background Grid Texture (Latitude/Longitude Mesh) -->
+  <g opacity="0.35">
+    <circle cx="512" cy="512" r="330" fill="none" stroke="url(#gridGrad)" stroke-width="1.5" stroke-dasharray="6 8"/>
+    <circle cx="512" cy="512" r="260" fill="none" stroke="url(#gridGrad)" stroke-width="1.5" stroke-dasharray="4 6"/>
+    <line x1="512" y1="180" x2="512" y2="844" stroke="url(#gridGrad)" stroke-width="1.5" stroke-dasharray="4 8"/>
+    <line x1="180" y1="512" x2="844" y2="512" stroke="url(#gridGrad)" stroke-width="1.5" stroke-dasharray="4 8"/>
+  </g>
+
+  <!-- 3. Camera Lens Outer Bezel & Focus Ribs -->
+  <g>
+    <!-- Outer Metal Mount -->
+    <circle cx="512" cy="512" r="300" fill="url(#metalRing1)"/>
+    <circle cx="512" cy="512" r="298" fill="none" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="2"/>
+    <circle cx="512" cy="512" r="280" fill="url(#metalRing2)"/>
+    
+    <!-- Focus Index Tick Marks -->
+    <g stroke="#8A92A6" stroke-width="3" stroke-linecap="round" opacity="0.6">
+      <line x1="512" y1="216" x2="512" y2="228" stroke="#FF5252" stroke-width="4"/> <!-- Red Zero Mark -->
+      <line x1="570" y1="222" x2="566" y2="232"/>
+      <line x1="626" y1="239" x2="618" y2="247"/>
+      <line x1="677" y1="267" x2="667" y2="273"/>
+      <line x1="720" y1="304" x2="708" y2="308"/>
+      <line x1="454" y1="222" x2="458" y2="232"/>
+      <line x1="398" y1="239" x2="406" y2="247"/>
+      <line x1="347" y1="267" x2="357" y2="273"/>
+      <line x1="304" y1="304" x2="316" y2="308"/>
+    </g>
+
+    <!-- Inner Stepped Ring -->
+    <circle cx="512" cy="512" r="255" fill="#0A0B0F" stroke="#1A1C24" stroke-width="4"/>
+    <circle cx="512" cy="512" r="240" fill="url(#metalRing1)"/>
+    <circle cx="512" cy="512" r="236" fill="#07080C"/>
+  </g>
+
+  <!-- 4. Deep Optical Lens Element (Glass Reflection) -->
+  <g>
+    <!-- Deep Glass Basin -->
+    <circle cx="512" cy="512" r="225" fill="url(#lensGlass)"/>
+
+    <!-- Lens Flare / Multi-Coating Arch Highlight (Top-Left) -->
+    <path d="M 330 420 A 210 210 0 0 1 630 330 A 210 180 0 0 0 330 420 Z" fill="url(#coatingReflect1)"/>
+
+    <!-- Secondary Coating Flare (Bottom-Right) -->
+    <path d="M 680 590 A 205 205 0 0 1 450 705 A 205 185 0 0 0 680 590 Z" fill="url(#coatingReflect2)"/>
+
+    <!-- Optical Aperture Blades (Mechanical Iris) -->
+    <g opacity="0.85" stroke="#161B26" stroke-width="3">
+      <!-- 6 Overlapping Blade Silhouettes -->
+      <polygon points="512,330 580,410 490,430" fill="#11141D" opacity="0.9"/>
+      <polygon points="580,410 590,520 500,490" fill="#0F121A" opacity="0.9"/>
+      <polygon points="590,520 530,600 470,520" fill="#131620" opacity="0.9"/>
+      <polygon points="530,600 430,580 470,490" fill="#10131B" opacity="0.9"/>
+      <polygon points="430,580 410,480 490,460" fill="#12151E" opacity="0.9"/>
+      <polygon points="410,480 480,390 530,460" fill="#151924" opacity="0.9"/>
+    </g>
+  </g>
+
+  <!-- 5. Glowing GPS Orbital Track Wave (Crossing the Lens) -->
+  <g filter="url(#neonGlow)">
+    <!-- Main Sweeping GPX Track -->
+    <path d="M 240 680 C 330 760, 430 730, 520 620 C 610 510, 680 390, 780 330" 
+          fill="none" 
+          stroke="url(#gpsTrackGrad)" 
+          stroke-width="12" 
+          stroke-linecap="round"/>
+
+    <!-- Orbital Waypoint Nodes along the Track -->
+    <circle cx="310" cy="718" r="8" fill="#38EF7D"/>
+    <circle cx="430" cy="685" r="9" fill="#00F2FE"/>
+    <circle cx="620" cy="485" r="10" fill="#00F2FE"/>
+    <circle cx="730" cy="365" r="8" fill="#38EF7D"/>
+
+    <!-- Pulse Signal Rings at Focal Center -->
+    <circle cx="512" cy="512" r="54" fill="none" stroke="#00F2FE" stroke-width="4" opacity="0.4"/>
+    <circle cx="512" cy="512" r="82" fill="none" stroke="#00F2FE" stroke-width="2.5" opacity="0.25" stroke-dasharray="6 6"/>
+  </g>
+
+  <!-- 6. Hero Modern Geolocation Pin (3D Floating Glass & Metal Pin) -->
+  <g filter="url(#macShadow)">
+    <!-- Pin Drop Shadow -->
+    <ellipse cx="512" cy="565" rx="36" ry="14" fill="#000000" opacity="0.5" filter="url(#glow)"/>
+
+    <!-- Pin Outer Body -->
+    <path d="M 512 360 C 465 360, 430 396, 430 445 C 430 498, 485 570, 512 600 C 539 570, 594 498, 594 445 C 594 396, 559 360, 512 360 Z" 
+          fill="url(#pinGrad)"/>
+
+    <!-- Pin Highlight & Specular Rim -->
+    <path d="M 512 363 C 468 363, 434 398, 434 445 C 434 494, 485 562, 512 592 C 539 562, 590 494, 590 445 C 590 398, 556 363, 512 363 Z" 
+          fill="none" 
+          stroke="url(#pinHighlight)" 
+          stroke-width="3"/>
+
+    <!-- Pin Inner Core / Aperture Center -->
+    <circle cx="512" cy="442" r="35" fill="#FFFFFF"/>
+    <circle cx="512" cy="442" r="24" fill="#121620"/>
+    
+    <!-- Central GPS Coordinate Core Light -->
+    <circle cx="512" cy="442" r="14" fill="#00F2FE" filter="url(#glow)"/>
+    <circle cx="512" cy="442" r="7" fill="#FFFFFF"/>
+  </g>
+
+  <!-- 7. Top Surface Glass Specular Glare (Classic macOS Icon Lighting) -->
+  <path d="M 120 120 L 904 120 C 904 120, 904 380, 512 430 C 120 380, 120 120, 120 120 Z" 
+        fill="url(#pinHighlight)" 
+        opacity="0.12" 
+        clip-path="url(#bodyClip)"/>
+</svg>

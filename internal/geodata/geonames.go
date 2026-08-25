@@ -68,7 +68,7 @@ func DownloadWithCache(ctx context.Context, rawURL string, logFn func(string)) (
 	if err != nil {
 		return nil, fmt.Errorf("构建 HTTP 请求失败: %w", err)
 	}
-	req.Header.Set("User-Agent", "PhotoTools/1.0 (Photography GPS & Geocoding Suite)")
+	req.Header.Set("User-Agent", "photools/1.0 (Photography GPS & Geocoding Suite)")
 
 	client := &http.Client{
 		Timeout: 5 * time.Minute,

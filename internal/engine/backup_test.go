@@ -85,3 +85,32 @@ func TestBackupAndRestoreAssetGroups(t *testing.T) {
 		t.Errorf("还原后的 XMP 文件不存在: %v", err)
 	}
 }
+
+func TestCreateBackup(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "photools_create_backup_test_*")
+	if err != nil {
+		t.Fatalf("创建临时目录失败: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sourceDir := filepath.Join(tempDir, "Inbox")
+	_ = os.MkdirAll(sourceDir, 0o755)
+
+	f1 := filepath.Join(sourceDir, "DSC_001.NEF")
+	f2 := filepath.Join(sourceDir, "DSC_001.JPG")
+	_ = os.WriteFile(f1, []byte("raw"), 0o644)
+	_ = os.WriteFile(f2, []byte("jpg"), 0o644)
+
+	backupDir := filepath.Join(tempDir, "Inbox_bak")
+	count, err := CreateBackup(sourceDir, backupDir)
+	if err != nil {
+		t.Fatalf("CreateBackup 失败: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("期望备份 2 个文件, 实际: %d", count)
+	}
+
+	if _, err := os.Stat(filepath.Join(backupDir, "DSC_001.NEF")); err != nil {
+		t.Errorf("备份文件不存在: %v", err)
+	}
+}

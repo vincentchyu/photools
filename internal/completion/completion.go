@@ -112,9 +112,9 @@ _photools() {
                 'restore-test:[测试辅助] 从 Inbox_bak 备份目录一键还原原始照片至 Inbox'
                 'geodata:管理全球各大洲及中国高精离线地理数据包 (下载/安装/卸载/测试)'
                 'completion:生成或一键安装 Shell Tab 键智能自动补全脚本'
-                'help:显示 PhotoTools 命令行帮助文档'
+                'help:显示 photools 命令行帮助文档'
             )
-            _describe -t subcommands 'PhotoTools 功能指令' subcommands
+            _describe -t subcommands 'photools 功能指令' subcommands
             ;;
         args)
             case $line[1] in
@@ -286,7 +286,7 @@ complete -c photools -n "__fish_use_subcommand" -a organize-by-date -d "根据�
 complete -c photools -n "__fish_use_subcommand" -a restore-test -d "从 Inbox_bak 备份目录一键还原原始照片至 Inbox"
 complete -c photools -n "__fish_use_subcommand" -a geodata -d "管理全球各大洲及中国高精离线地理数据包"
 complete -c photools -n "__fish_use_subcommand" -a completion -d "生成或一键安装 Shell 自动补全"
-complete -c photools -n "__fish_use_subcommand" -a help -d "显示 PhotoTools 命令行帮助"
+complete -c photools -n "__fish_use_subcommand" -a help -d "显示 photools 命令行帮助"
 
 # geodata 子命令
 complete -c photools -n "__fish_seen_subcommand_from geodata" -a list -d "列出所有可用大洲及本地安装状态"
@@ -411,7 +411,7 @@ func InstallShellCompletion() (string, error) {
 		if len(appended) > 0 && !strings.HasSuffix(appended, "\n") {
 			appended += "\n"
 		}
-		appended += "\n# PhotoTools Shell Auto-Completion\n" + sourceLine + "\n"
+		appended += "\n# photools Shell Auto-Completion\n" + sourceLine + "\n"
 		if err := os.WriteFile(targetFile, []byte(appended), 0o644); err != nil {
 			return "", err
 		}

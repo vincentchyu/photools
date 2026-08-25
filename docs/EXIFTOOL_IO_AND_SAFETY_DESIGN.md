@@ -51,7 +51,7 @@ flowchart LR
 ```mermaid
 sequenceDiagram
     autonumber
-    participant App as PhotoTools
+    participant App as photools
     participant Tool as ExifTool
     participant Disk as 磁盘文件系统
 
