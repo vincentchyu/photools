@@ -42,37 +42,57 @@ public struct PipelineDashboardView: View {
 
             Spacer()
 
-            // 核心执行主按钮
-            if store.runState.isRunning {
-                Button(role: .destructive) {
-                    store.cancelCurrentTask()
-                } label: {
-                    Label(lang.text(.interruptPipeline), systemImage: "stop.fill")
+            // 核心执行主按钮与清除状态按钮组
+            HStack(spacing: 8) {
+                if store.runState != .idle && !store.runState.isRunning {
+                    Button {
+                        store.resetTaskStatus()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.counterclockwise.circle.fill")
+                            Text(lang.text(.clearStatus))
+                        }
                         .font(.subheadline.weight(.semibold))
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .keyboardShortcut(".", modifiers: .command)
-                .help(lang.text(.interruptPipelineHelp))
-            } else {
-                Button {
-                    store.runPipeline()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "play.fill")
-                        Text(lang.text(.runPipeline))
-                        Text("⌘↩")
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Color.white.opacity(0.2), in: RoundedRectangle(cornerRadius: 3))
                     }
-                    .font(.subheadline.weight(.semibold))
+                    .buttonStyle(.bordered)
+                    .tint(.secondary)
+                    .help(lang.text(.clearStatusHelp))
+                    .pulseOnHover(scale: 1.05, glowColor: .secondary)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.accentColor)
-                .keyboardShortcut(.return, modifiers: .command)
-                .help(lang.text(.runPipelineHelp))
+
+                if store.runState.isRunning {
+                    Button(role: .destructive) {
+                        store.cancelCurrentTask()
+                    } label: {
+                        Label(lang.text(.interruptPipeline), systemImage: "stop.fill")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .keyboardShortcut(".", modifiers: .command)
+                    .help(lang.text(.interruptPipelineHelp))
+                    .pulseOnHover(scale: 1.05, glowColor: .red)
+                } else {
+                    Button {
+                        store.runPipeline()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "play.fill")
+                            Text(lang.text(.runPipeline))
+                            Text("⌘↩")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.white.opacity(0.2), in: RoundedRectangle(cornerRadius: 3))
+                        }
+                        .font(.subheadline.weight(.semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.accentColor)
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .help(lang.text(.runPipelineHelp))
+                    .pulseOnHover(scale: 1.05, glowColor: .accentColor)
+                }
             }
         }
     }

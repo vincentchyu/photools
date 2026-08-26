@@ -6,9 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/term"
@@ -25,6 +27,18 @@ import (
 )
 
 func main() {
+	// 确保退出时释放常驻 ExifTool 进程池
+	defer exiftool.CloseDefaultPool()
+
+	// 监听系统退出信号，确保 Ctrl+C 时也能清理子进程
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		exiftool.CloseDefaultPool()
+		os.Exit(130)
+	}()
+
 	// 启动时自动同步并升级 ~/.config/photools/plugins.json 配置
 	_, _ = config.LoadPluginsConfig("")
 

@@ -77,6 +77,7 @@ private typealias FnCreateBackup = @convention(c) (UnsafePointer<CChar>, UnsafeP
 private typealias FnRestoreBackup = @convention(c) (UnsafePointer<CChar>, UnsafePointer<CChar>, UnsafePointer<CChar>, Int32) -> Int32
 private typealias FnCancelTask = @convention(c) () -> Void
 private typealias FnInspectPhotoMetadata = @convention(c) (UnsafePointer<CChar>) -> UnsafePointer<CChar>?
+private typealias FnShutdown = @convention(c) () -> Void
 private typealias FnFreeString = @convention(c) (UnsafePointer<CChar>?) -> Void
 
 // MARK: - Swift 回调保持器
@@ -108,6 +109,7 @@ public final class PhotoolsEngine: @unchecked Sendable {
     private var fnRestoreBackup: FnRestoreBackup?
     private var fnCancelTask: FnCancelTask?
     private var fnInspectPhotoMetadata: FnInspectPhotoMetadata?
+    private var fnShutdown: FnShutdown?
     private var fnFreeString: FnFreeString?
 
     public private(set) var isLoaded: Bool = false
@@ -119,6 +121,7 @@ public final class PhotoolsEngine: @unchecked Sendable {
     }
 
     deinit {
+        shutdown()
         if let handle = dylibHandle {
             dlclose(handle)
         }
@@ -184,6 +187,9 @@ public final class PhotoolsEngine: @unchecked Sendable {
         }
         if let sym = dlsym(handle, "Photools_InspectPhotoMetadata") {
             fnInspectPhotoMetadata = unsafeBitCast(sym, to: FnInspectPhotoMetadata.self)
+        }
+        if let sym = dlsym(handle, "Photools_Shutdown") {
+            fnShutdown = unsafeBitCast(sym, to: FnShutdown.self)
         }
         if let sym = dlsym(handle, "Photools_FreeString") {
             fnFreeString = unsafeBitCast(sym, to: FnFreeString.self)
@@ -504,5 +510,12 @@ public final class PhotoolsEngine: @unchecked Sendable {
             return nil
         }
         return ExifMetadata.parse(from: dict, fallbackPath: filePath)
+    }
+
+    // 11. 安全退出并回收全部常驻子进程资源
+    public func shutdown() {
+        lock.lock()
+        defer { lock.unlock() }
+        fnShutdown?()
     }
 }

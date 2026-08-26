@@ -98,6 +98,10 @@ final class WorkspaceScannerTests: XCTestCase {
         XCTAssertEqual(summary.pendingReportText, "")
     }
 
+    func testScanMissingDirectoryThrows() throws {
+        XCTAssertThrowsError(try WorkspaceScanner().scan(baseDirectory: "/non/existent/photools/path"))
+    }
+
     private func makeWorkspace() throws -> URL {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString)

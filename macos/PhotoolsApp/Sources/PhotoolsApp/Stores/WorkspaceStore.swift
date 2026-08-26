@@ -66,22 +66,19 @@ public final class WorkspaceStore: ObservableObject {
         didSet {
             if baseDirectory != oldValue {
                 if flatMode {
-                    if sourceDirectory == oldValue || sourceDirectory.isEmpty {
-                        sourceDirectory = baseDirectory
-                    }
-                    if processedDirectory == oldValue || processedDirectory.isEmpty {
-                        processedDirectory = baseDirectory
-                    }
+                    sourceDirectory = baseDirectory
+                    processedDirectory = baseDirectory
                 } else {
                     let oldInbox = (oldValue as NSString).appendingPathComponent("Inbox")
                     let oldProcessed = (oldValue as NSString).appendingPathComponent("Processed")
-                    if sourceDirectory.isEmpty || sourceDirectory == oldValue || sourceDirectory == oldInbox {
+                    if sourceDirectory.isEmpty || sourceDirectory == oldValue || sourceDirectory == oldInbox || sourceDirectory.hasSuffix("/Inbox") || !sourceDirectory.hasPrefix(baseDirectory) {
                         sourceDirectory = (baseDirectory as NSString).appendingPathComponent("Inbox")
                     }
-                    if processedDirectory.isEmpty || processedDirectory == oldValue || processedDirectory == oldProcessed {
+                    if processedDirectory.isEmpty || processedDirectory == oldValue || processedDirectory == oldProcessed || processedDirectory.hasSuffix("/Processed") || !processedDirectory.hasPrefix(baseDirectory) {
                         processedDirectory = (baseDirectory as NSString).appendingPathComponent("Processed")
                     }
                 }
+                refresh()
             }
         }
     }
@@ -91,10 +88,10 @@ public final class WorkspaceStore: ObservableObject {
         didSet {
             if flatMode != oldValue {
                 if flatMode {
-                    if sourceDirectory == (baseDirectory as NSString).appendingPathComponent("Inbox") {
+                    if sourceDirectory == (baseDirectory as NSString).appendingPathComponent("Inbox") || !sourceDirectory.hasPrefix(baseDirectory) {
                         sourceDirectory = baseDirectory
                     }
-                    if processedDirectory == (baseDirectory as NSString).appendingPathComponent("Processed") {
+                    if processedDirectory == (baseDirectory as NSString).appendingPathComponent("Processed") || !processedDirectory.hasPrefix(baseDirectory) {
                         processedDirectory = baseDirectory
                     }
                 } else {
@@ -139,6 +136,12 @@ public final class WorkspaceStore: ObservableObject {
     private var logLines: [String] = []
     public static let maxLiveLogLines = 500
 
+    private static let logTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter
+    }()
+
     // ExifTool 异步元数据检查器
     @Published public private(set) var selectedAssetExif: ExifMetadata?
     @Published public private(set) var isExifLoading: Bool = false
@@ -181,10 +184,36 @@ public final class WorkspaceStore: ObservableObject {
         self.exifReader = exifReader
 
         let defaultBase = Self.defaultBaseDirectory
-        self.baseDirectory = UserDefaults.standard.string(forKey: "baseDirectory") ?? defaultBase
-        self.sourceDirectory = UserDefaults.standard.string(forKey: "sourceDirectory") ?? (defaultBase as NSString).appendingPathComponent("Inbox")
-        self.processedDirectory = UserDefaults.standard.string(forKey: "processedDirectory") ?? (defaultBase as NSString).appendingPathComponent("Processed")
+        let savedBase = UserDefaults.standard.string(forKey: "baseDirectory") ?? defaultBase
+        self.baseDirectory = savedBase
         self.flatMode = UserDefaults.standard.bool(forKey: "flatMode")
+
+        let defaultInbox = (savedBase as NSString).appendingPathComponent("Inbox")
+        let defaultProcessed = (savedBase as NSString).appendingPathComponent("Processed")
+
+        let savedSource = UserDefaults.standard.string(forKey: "sourceDirectory")
+        let savedProcessed = UserDefaults.standard.string(forKey: "processedDirectory")
+
+        if let savedSource, !savedSource.isEmpty {
+            if savedSource.hasSuffix("/Inbox") || savedSource == (defaultBase as NSString).appendingPathComponent("Inbox") || !savedSource.hasPrefix(savedBase) {
+                self.sourceDirectory = defaultInbox
+            } else {
+                self.sourceDirectory = savedSource
+            }
+        } else {
+            self.sourceDirectory = defaultInbox
+        }
+
+        if let savedProcessed, !savedProcessed.isEmpty {
+            if savedProcessed.hasSuffix("/Processed") || savedProcessed == (defaultBase as NSString).appendingPathComponent("Processed") || !savedProcessed.hasPrefix(savedBase) {
+                self.processedDirectory = defaultProcessed
+            } else {
+                self.processedDirectory = savedProcessed
+            }
+        } else {
+            self.processedDirectory = defaultProcessed
+        }
+
         self.inPlace = UserDefaults.standard.bool(forKey: "inPlace")
         self.rawExtensions = UserDefaults.standard.string(forKey: "rawExtensions") ?? "nef,cr3,arw,dng,raf,rw2,orf"
         
@@ -216,7 +245,7 @@ public final class WorkspaceStore: ObservableObject {
         if flatMode {
             return baseDirectory
         }
-        if sourceDirectory.isEmpty || sourceDirectory == baseDirectory {
+        if sourceDirectory.isEmpty || sourceDirectory == baseDirectory || sourceDirectory.hasSuffix("/Inbox") || !sourceDirectory.hasPrefix(baseDirectory) {
             return (baseDirectory as NSString).appendingPathComponent("Inbox")
         }
         return sourceDirectory
@@ -226,7 +255,7 @@ public final class WorkspaceStore: ObservableObject {
         if flatMode {
             return baseDirectory
         }
-        if processedDirectory.isEmpty || processedDirectory == baseDirectory {
+        if processedDirectory.isEmpty || processedDirectory == baseDirectory || processedDirectory.hasSuffix("/Processed") || !processedDirectory.hasPrefix(baseDirectory) {
             return (baseDirectory as NSString).appendingPathComponent("Processed")
         }
         return processedDirectory
@@ -268,25 +297,25 @@ public final class WorkspaceStore: ObservableObject {
     // 启动瞬间在后台并发完成四大插件的初始化并常驻内存
     private func warmupInProcessEngine() {
         guard engine.isLoaded else {
-            appendLog("ℹ️ 运行于 CLI 子进程模式 (未检测到 libphotools.dylib)\n")
+            appendLog("ℹ️ 运行于 CLI 子进程模式 (未检测到 libphotools.dylib)")
             return
         }
 
-        appendLog("⚡ [photools Engine] 正在进程内异步预热四大核心插件与离线 3D KD-Tree 索引...\n")
+        appendLog("⚡ [photools Engine] 正在进程内异步预热四大核心插件与离线 3D KD-Tree 索引...")
         let eng = self.engine
         Task.detached(priority: .userInitiated) {
             eng.initializeEngine { [weak self] rep in
                 guard let self else { return }
                 Task { @MainActor in
                     if rep.status == "ready" {
-                        self.appendLog("  • [就绪] \(rep.name): \(rep.message)\n")
+                        self.appendLog("  • [就绪] \(rep.name): \(rep.message)")
                     } else if rep.status == "warning" {
-                        self.appendLog("  • [提示] \(rep.name): \(rep.message)\n")
+                        self.appendLog("  • [提示] \(rep.name): \(rep.message)")
                     }
                 }
             }
             Task { @MainActor [weak self] in
-                self?.appendLog("🚀 [photools Engine] 插件全生命周期常驻内存就绪！\n\n")
+                self?.appendLog("🚀 [photools Engine] 插件全生命周期常驻内存就绪！\n")
                 self?.loadGeodataList()
             }
         }
@@ -326,7 +355,7 @@ public final class WorkspaceStore: ObservableObject {
                 loadExifForSelectedAsset()
             }
         } catch {
-            appendLog("⚠️ 扫描工作区失败：\(error.localizedDescription)\n")
+            appendLog("⚠️ 扫描工作区失败：\(error.localizedDescription)")
             summary = nil
         }
     }
@@ -343,12 +372,18 @@ public final class WorkspaceStore: ObservableObject {
         refresh()
     }
 
-    // 高性能追加日志 (自动限制最多保留最近 500 行，自动剔除旧数据)
-    public func appendLog(_ text: String) {
+    // 高性能追加日志 (自动增加毫秒级时间戳 [HH:mm:ss.SSS]，自动限制最多保留最近 500 行，杜绝内存与渲染卡顿)
+    public func appendLog(_ text: String, withTimestamp: Bool = true) {
         let lines = text.components(separatedBy: "\n")
+        let now = Self.logTimeFormatter.string(from: Date())
         for line in lines {
-            if !line.isEmpty {
-                logLines.append(line)
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty {
+                if withTimestamp && !hasTimestampPrefix(trimmed) {
+                    logLines.append("[\(now)] \(trimmed)")
+                } else {
+                    logLines.append(trimmed)
+                }
             }
         }
         if logLines.count > Self.maxLiveLogLines {
@@ -357,9 +392,22 @@ public final class WorkspaceStore: ObservableObject {
         self.liveLog = logLines.joined(separator: "\n")
     }
 
+    private func hasTimestampPrefix(_ text: String) -> Bool {
+        guard text.count >= 13, text.hasPrefix("[") else { return false }
+        let chars = Array(text.prefix(13))
+        // 格式: [12:34:56.789]
+        return chars[0] == "[" && chars[3] == ":" && chars[6] == ":" && chars[9] == "." && chars[12] == "]"
+    }
+
     public func clearLiveLog() {
         logLines.removeAll()
         liveLog = ""
+    }
+
+    // 清除/重置当前任务状态与执行看板
+    public func resetTaskStatus() {
+        runState = .idle
+        currentStageIndex = -1
     }
 
     public func updateStageProgress(stageName: String, message: String) {
@@ -396,7 +444,7 @@ public final class WorkspaceStore: ObservableObject {
     public func runPipeline() {
         guard !runState.isRunning else { return }
         guard enableGPXMatch || enableInterpolate || enableGeocode || enableArchive else {
-            appendLog("⚠️ 请至少启用一项能力插件！\n")
+            appendLog("⚠️ 请至少启用一项能力插件！")
             return
         }
 
@@ -429,30 +477,30 @@ public final class WorkspaceStore: ObservableObject {
         )
 
         if engine.isLoaded {
-            appendLog("🚀 开始执行自动化处理流水线 (In-Process Engine)...\n\n")
+            appendLog("🚀 开始执行自动化处理流水线 (In-Process Engine)...")
             Task {
                 do {
                     let summary = try await engine.runPipeline(options: options) { [weak self] evt in
                         Task { @MainActor in
-                            self?.appendLog("[\(evt.stage)] \(evt.message)\n")
+                            self?.appendLog("[\(evt.stage)] \(evt.message)")
                             self?.updateStageProgress(stageName: evt.stage, message: evt.message)
                         }
                     }
                     runState = .succeeded
                     currentStageIndex = 5 // 全部 5 个节点圆满完成
-                    appendLog("\n🎉 流水线执行完毕！成功: \(summary.successCount), 跳过: \(summary.skipCount), 失败: \(summary.failCount), 耗时: \(String(format: "%.2f", summary.durationSeconds))s\n")
+                    appendLog("🎉 流水线执行完毕！成功: \(summary.successCount), 跳过: \(summary.skipCount), 失败: \(summary.failCount), 耗时: \(String(format: "%.2f", summary.durationSeconds))s")
                     refresh()
                 } catch {
                     runState = .failed(error.localizedDescription)
-                    appendLog("\n❌ 流水线执行失败：\(error.localizedDescription)\n")
+                    appendLog("❌ 流水线执行失败：\(error.localizedDescription)")
                     refresh()
                 }
             }
         } else {
             // CLI 子进程降级模式
             let command = PhotoolsCommand.pipeline(executablePath: photoolsExecutablePath, options: options)
-            appendLog("🚀 开始执行外部 CLI 流水线...\n")
-            appendLog("$ \(command.executablePath) \(command.arguments.joined(separator: " "))\n\n")
+            appendLog("🚀 开始执行外部 CLI 流水线...")
+            appendLog("$ \(command.executablePath) \(command.arguments.joined(separator: " "))")
 
             Task {
                 do {
@@ -464,11 +512,11 @@ public final class WorkspaceStore: ObservableObject {
                     }
                     runState = .succeeded
                     currentStageIndex = 5 // 全部 5 个节点圆满完成
-                    appendLog("\n✅ 流水线任务执行完成！\n")
+                    appendLog("✅ 流水线任务执行完成！")
                     refresh()
                 } catch {
                     runState = .failed(error.localizedDescription)
-                    appendLog("\n❌ 执行异常：\(error.localizedDescription)\n")
+                    appendLog("❌ 执行异常：\(error.localizedDescription)")
                     refresh()
                 }
             }
@@ -483,7 +531,7 @@ public final class WorkspaceStore: ObservableObject {
             processClient.cancel()
         }
         runState = .failed("任务已被用户手动中断")
-        appendLog("\n🛑 任务已被手动中断。\n")
+        appendLog("🛑 任务已被手动中断。")
     }
 
     public func createBackup() {
@@ -491,18 +539,18 @@ public final class WorkspaceStore: ObservableObject {
         runState = .running
         let srcDir = effectiveSourceDirectory
         let bakDir = (baseDirectory as NSString).appendingPathComponent("Inbox_bak")
-        appendLog("\n📸 开始创建原始照片全量快照备份 [\(srcDir) -> \(bakDir)]...\n")
+        appendLog("📸 开始创建原始照片全量快照备份 [\(srcDir) -> \(bakDir)]...")
 
         if engine.isLoaded {
             Task {
                 do {
                     let count = try await engine.createBackup(sourceDir: srcDir, backupDir: bakDir)
                     runState = .succeeded
-                    appendLog("✅ 快照备份成功！共备份 \(count) 个文件。\n")
+                    appendLog("✅ 快照备份成功！共备份 \(count) 个文件。")
                     refresh()
                 } catch {
                     runState = .failed(error.localizedDescription)
-                    appendLog("❌ 快照备份失败：\(error.localizedDescription)\n")
+                    appendLog("❌ 快照备份失败：\(error.localizedDescription)")
                     refresh()
                 }
             }
@@ -536,11 +584,11 @@ public final class WorkspaceStore: ObservableObject {
                         }
                     }
                     runState = .succeeded
-                    appendLog("✅ 快照备份成功！\n")
+                    appendLog("✅ 快照备份成功！")
                     refresh()
                 } catch {
                     runState = .failed(error.localizedDescription)
-                    appendLog("❌ 快照备份失败：\(error.localizedDescription)\n")
+                    appendLog("❌ 快照备份失败：\(error.localizedDescription)")
                     refresh()
                 }
             }
@@ -556,7 +604,7 @@ public final class WorkspaceStore: ObservableObject {
         runState = .running
         let srcDir = effectiveSourceDirectory
         let bakDir = (baseDirectory as NSString).appendingPathComponent("Inbox_bak")
-        appendLog("\n🔄 开始从快照还原原始照片 [\(bakDir) -> \(srcDir)]...\n")
+        appendLog("🔄 开始从快照还原原始照片 [\(bakDir) -> \(srcDir)]...")
 
         if engine.isLoaded {
             Task {
@@ -568,11 +616,11 @@ public final class WorkspaceStore: ObservableObject {
                         cleanProcessed: cleanProcessed
                     )
                     runState = .succeeded
-                    appendLog("✅ 快照还原成功！已恢复 \(count) 个文件至原始状态。\n")
+                    appendLog("✅ 快照还原成功！已恢复 \(count) 个文件至原始状态。")
                     refresh()
                 } catch {
                     runState = .failed(error.localizedDescription)
-                    appendLog("❌ 快照还原失败：\(error.localizedDescription)\n")
+                    appendLog("❌ 快照还原失败：\(error.localizedDescription)")
                     refresh()
                 }
             }
@@ -592,11 +640,11 @@ public final class WorkspaceStore: ObservableObject {
                         }
                     }
                     runState = .succeeded
-                    appendLog("✅ 快照还原成功！\n")
+                    appendLog("✅ 快照还原成功！")
                     refresh()
                 } catch {
                     runState = .failed(error.localizedDescription)
-                    appendLog("❌ 快照还原失败：\(error.localizedDescription)\n")
+                    appendLog("❌ 快照还原失败：\(error.localizedDescription)")
                     refresh()
                 }
             }
@@ -629,7 +677,7 @@ public final class WorkspaceStore: ObservableObject {
     public func installGeodata(target: String) {
         guard !runState.isRunning else { return }
         runState = .running
-        appendLog("\n📦 开始安装离线地理数据包 [\(target)]...\n")
+        appendLog("📦 开始安装离线地理数据包 [\(target)]...")
 
         if engine.isLoaded {
             Task {
@@ -640,11 +688,11 @@ public final class WorkspaceStore: ObservableObject {
                         }
                     }
                     runState = .succeeded
-                    appendLog("✅ 离线地理数据包 [\(target)] 安装成功！\n")
+                    appendLog("✅ 离线地理数据包 [\(target)] 安装成功！")
                     loadGeodataList()
                 } catch {
                     runState = .failed(error.localizedDescription)
-                    appendLog("❌ 安装失败: \(error.localizedDescription)\n")
+                    appendLog("❌ 安装失败：\(error.localizedDescription)")
                 }
             }
         } else {
@@ -657,11 +705,11 @@ public final class WorkspaceStore: ObservableObject {
                         }
                     }
                     runState = .succeeded
-                    appendLog("✅ 离线地理数据包 [\(target)] 安装完成！\n")
+                    appendLog("✅ 离线地理数据包 [\(target)] 安装完成！")
                     loadGeodataList()
                 } catch {
                     runState = .failed(error.localizedDescription)
-                    appendLog("❌ 安装失败: \(error.localizedDescription)\n")
+                    appendLog("❌ 安装失败：\(error.localizedDescription)")
                 }
             }
         }
@@ -669,15 +717,15 @@ public final class WorkspaceStore: ObservableObject {
 
     public func removeGeodata(target: String) {
         guard !runState.isRunning else { return }
-        appendLog("\n🗑️ 开始移除离线地理数据包 [\(target)]...\n")
+        appendLog("🗑️ 开始移除离线地理数据包 [\(target)]...")
 
         if engine.isLoaded {
             do {
                 try engine.removeGeodata(target: target)
-                appendLog("✅ 离线地理数据包 [\(target)] 已移除。\n")
+                appendLog("✅ 离线地理数据包 [\(target)] 已移除。")
                 loadGeodataList()
             } catch {
-                appendLog("❌ 移除失败: \(error.localizedDescription)\n")
+                appendLog("❌ 移除失败：\(error.localizedDescription)")
             }
         } else {
             let cmd = PhotoolsCommand.geodataRemove(executablePath: photoolsExecutablePath, target: target)
@@ -688,10 +736,10 @@ public final class WorkspaceStore: ObservableObject {
                             self?.appendLog(text)
                         }
                     }
-                    appendLog("✅ 离线地理数据包 [\(target)] 已移除。\n")
+                    appendLog("✅ 离线地理数据包 [\(target)] 已移除。")
                     loadGeodataList()
                 } catch {
-                    appendLog("❌ 移除失败: \(error.localizedDescription)\n")
+                    appendLog("❌ 移除失败：\(error.localizedDescription)")
                 }
             }
         }

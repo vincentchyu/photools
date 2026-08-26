@@ -3,6 +3,7 @@ import SwiftUI
 
 @main
 struct PhotoolsApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var store = WorkspaceStore()
 
     var body: some Scene {

@@ -3,6 +3,7 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -117,6 +118,17 @@ func TestDiscoverer_ShieldsBackupAndSystemDirs(t *testing.T) {
 
 	if groups[0].BaseName != "valid" {
 		t.Errorf("期望发现 valid，实际发现: %s", groups[0].BaseName)
+	}
+}
+
+func TestDiscoverer_NonExistentDir(t *testing.T) {
+	d := NewDiscoverer([]string{"nef"})
+	_, err := d.Discover("/non/existent/path/for/photools/test")
+	if err == nil {
+		t.Fatal("期望 Discover 对不存在的目录返回错误，但实际返回 nil")
+	}
+	if !strings.Contains(err.Error(), "不存在") {
+		t.Errorf("期望返回包含友好提示的错误，实际返回: %v", err)
 	}
 }
 

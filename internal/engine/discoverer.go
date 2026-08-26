@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -57,10 +58,21 @@ func IsIgnoredDir(name string) bool {
 
 // Discover 递归扫描 sourceDir 并返回按目录和 BaseName 排序的 AssetGroup
 func (d *Discoverer) Discover(sourceDir string) ([]domain.AssetGroup, error) {
+	fi, err := os.Stat(sourceDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("待处理照片源目录不存在: %s (请检查工作区设置)", sourceDir)
+		}
+		return nil, fmt.Errorf("无法访问照片源目录 %s: %w", sourceDir, err)
+	}
+	if !fi.IsDir() {
+		return nil, fmt.Errorf("照片源路径不是有效目录: %s", sourceDir)
+	}
+
 	groups := map[string]*domain.AssetGroup{}
 	cleanSourceDir := filepath.Clean(sourceDir)
 
-	err := filepath.WalkDir(
+	err = filepath.WalkDir(
 		sourceDir, func(path string, entry os.DirEntry, err error) error {
 			if err != nil {
 				return err

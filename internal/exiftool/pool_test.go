@@ -180,6 +180,41 @@ func TestStayOpenPoolClose(t *testing.T) {
 	}
 }
 
+func TestStayOpenPoolCloseWithBorrowedWorkers(t *testing.T) {
+	pool, err := NewStayOpenPool(
+		StayOpenConfig{
+			MaxWorkers: 2,
+		},
+	)
+	if err != nil {
+		t.Fatalf("创建 StayOpenPool 失败: %v", err)
+	}
+
+	// 借出 2 个 Worker
+	w1, err := pool.acquireWorker()
+	if err != nil {
+		t.Fatalf("借出 w1 失败: %v", err)
+	}
+	w2, err := pool.acquireWorker()
+	if err != nil {
+		t.Fatalf("借出 w2 失败: %v", err)
+	}
+
+	// 在 Worker 仍被借出未归还的情况下直接 Close pool
+	if err := pool.Close(); err != nil {
+		t.Fatalf("Close pool 失败: %v", err)
+	}
+
+	// 确认底层 Worker 的 closed 状态
+	if !w1.closed || !w2.closed {
+		t.Errorf("期望被借出的 Worker 在 Pool.Close() 时全部被标记 closed: w1=%v, w2=%v", w1.closed, w2.closed)
+	}
+
+	// 归还应当安全无 panic
+	pool.releaseWorker(w1)
+	pool.releaseWorker(w2)
+}
+
 func TestDefaultRunner(t *testing.T) {
 	CloseDefaultPool()
 	defer CloseDefaultPool()

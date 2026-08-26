@@ -71,6 +71,23 @@ public struct PipelineExecutionConsole: View {
 
             Spacer()
 
+            // 清除/重置当前任务状态
+            if store.runState != .idle && !store.runState.isRunning {
+                Button {
+                    store.resetTaskStatus()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.counterclockwise.circle")
+                        Text(lang.text(.clearStatus))
+                    }
+                    .font(.caption2.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help(lang.text(.clearStatusHelp))
+                .pulseOnHover(scale: 1.05, glowColor: .secondary)
+            }
+
             // 自动滚屏
             Toggle(isOn: $isAutoScroll) {
                 Text(lang.text(.autoScroll))
@@ -89,6 +106,7 @@ public struct PipelineExecutionConsole: View {
             }
             .buttonStyle(.borderless)
             .help(lang.text(.copyAllLogs))
+            .pulseOnHover(scale: 1.1, glowColor: .accentColor)
 
             // 清空日志
             Button {
@@ -99,6 +117,7 @@ public struct PipelineExecutionConsole: View {
             }
             .buttonStyle(.borderless)
             .help(lang.text(.clearLogs))
+            .pulseOnHover(scale: 1.1, glowColor: .red)
         }
     }
 
@@ -234,6 +253,7 @@ public struct PipelineExecutionConsole: View {
                         .font(.caption)
                 }
                 .buttonStyle(.bordered)
+                .pulseOnHover(scale: 1.04, glowColor: .green)
 
                 if store.summary?.pendingReportExists == true {
                     Button {
@@ -245,7 +265,17 @@ public struct PipelineExecutionConsole: View {
                             .font(.caption)
                     }
                     .buttonStyle(.bordered)
+                    .pulseOnHover(scale: 1.04, glowColor: .orange)
                 }
+
+                Button {
+                    store.resetTaskStatus()
+                } label: {
+                    Label(lang.text(.clearStatus), systemImage: "arrow.counterclockwise")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .pulseOnHover(scale: 1.04, glowColor: .blue)
             }
         }
         .padding(12)
@@ -266,6 +296,16 @@ public struct PipelineExecutionConsole: View {
                 Text(lang.text(.taskErrorTitle))
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(.red)
+                Spacer()
+
+                Button {
+                    store.resetTaskStatus()
+                } label: {
+                    Label(lang.text(.clearStatus), systemImage: "arrow.counterclockwise")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .pulseOnHover(scale: 1.04, glowColor: .red)
             }
             Text(error)
                 .font(.caption)

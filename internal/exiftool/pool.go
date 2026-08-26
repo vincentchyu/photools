@@ -225,6 +225,7 @@ func (w *StayOpenWorker) Close() error {
 type StayOpenPool struct {
 	config     StayOpenConfig
 	workers    chan *StayOpenWorker
+	allWorkers map[*StayOpenWorker]struct{}
 	workerSeq  int
 	reqCounter atomic.Uint64
 	mu         sync.Mutex
@@ -250,8 +251,9 @@ func NewStayOpenPool(cfg StayOpenConfig) (*StayOpenPool, error) {
 	}
 
 	p := &StayOpenPool{
-		config:  cfg,
-		workers: make(chan *StayOpenWorker, cfg.MaxWorkers),
+		config:     cfg,
+		workers:    make(chan *StayOpenWorker, cfg.MaxWorkers),
+		allWorkers: make(map[*StayOpenWorker]struct{}),
 	}
 
 	return p, nil
@@ -272,6 +274,9 @@ func (p *StayOpenPool) acquireWorker() (*StayOpenWorker, error) {
 		if !w.broken && !w.closed {
 			return w, nil
 		}
+		p.mu.Lock()
+		delete(p.allWorkers, w)
+		p.mu.Unlock()
 		_ = w.Close()
 	default:
 	}
@@ -288,6 +293,7 @@ func (p *StayOpenPool) acquireWorker() (*StayOpenWorker, error) {
 	if err != nil {
 		return nil, err
 	}
+	p.allWorkers[w] = struct{}{}
 	return w, nil
 }
 
@@ -301,6 +307,7 @@ func (p *StayOpenPool) releaseWorker(w *StayOpenWorker) {
 	defer p.mu.Unlock()
 
 	if p.closed || w.broken || w.closed {
+		delete(p.allWorkers, w)
 		_ = w.Close()
 		return
 	}
@@ -308,7 +315,8 @@ func (p *StayOpenPool) releaseWorker(w *StayOpenWorker) {
 	select {
 	case p.workers <- w:
 	default:
-		// 超过池容量时优雅关闭多余的 worker
+		// 超过池容量时优雅关闭多余的 worker 并从注册表中注销
+		delete(p.allWorkers, w)
 		_ = w.Close()
 	}
 }
@@ -333,12 +341,30 @@ func (p *StayOpenPool) Close() error {
 		return nil
 	}
 	p.closed = true
+
+	// 收集当前登记的所有 worker (包含已借出与在队列中的)
+	targets := make([]*StayOpenWorker, 0, len(p.allWorkers))
+	for w := range p.allWorkers {
+		targets = append(targets, w)
+	}
+	p.allWorkers = make(map[*StayOpenWorker]struct{})
 	p.mu.Unlock()
 
+	// 清空 channel
 	close(p.workers)
-	for w := range p.workers {
-		_ = w.Close()
+	for range p.workers {
 	}
+
+	// 并发优雅关闭所有 worker
+	var wg sync.WaitGroup
+	for _, w := range targets {
+		wg.Add(1)
+		go func(worker *StayOpenWorker) {
+			defer wg.Done()
+			_ = worker.Close()
+		}(w)
+	}
+	wg.Wait()
 	return nil
 }
 

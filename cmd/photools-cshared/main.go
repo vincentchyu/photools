@@ -487,6 +487,12 @@ func Photools_InspectPhotoMetadata(filePath *C.char) *C.char {
 	return C.CString(string(data))
 }
 
+//export Photools_Shutdown
+func Photools_Shutdown() {
+	Photools_CancelTask()
+	exiftool.CloseDefaultPool()
+}
+
 //export Photools_FreeString
 func Photools_FreeString(ptr *C.char) {
 	if ptr != nil {
