@@ -81,7 +81,7 @@
 
 ## 4. 核心工具包单元测试 100% 闭环规范 (AI 必遵)
 
-所有核心底层工具包（`internal/exiftool`、`internal/geocoding`、`internal/engine`、`internal/geodata`、`internal/pipeline` 等）必须提供 **100% 完整的对外接口测试闭环**：
+所有核心底层工具包（`internal/exiftool`、`pkg/geocoding`、`internal/engine`、`pkg/geodata`、`internal/pipeline` 等）必须提供 **100% 完整的对外接口测试闭环**：
 
 1. **导出函数全覆盖**：所有首字母大写的 Exported 函数必须在 `*_test.go` 中有直接对应的单元测试，严禁只测辅助函数漏测核心业务函数；
 2. **测试隔离性与 Mock**：外部系统调用（如 `exiftool` 二进制执行、网络下载）必须通过 Runner/Client 抽象注入 Mock，`go test ./...` 必须在纯净环境中秒级通过；

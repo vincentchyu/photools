@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vincentchyu/photo-processing/internal/domain"
+	"github.com/vincentchyu/photools/internal/domain"
 )
 
 // PluginMeta 记录单个插件在配置文件中的元数据与优先级设定

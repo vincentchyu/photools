@@ -164,7 +164,7 @@ go build -ldflags="-s -w" -o dist/photools ./cmd/photools
 
 > [!NOTE]
 > **Embedded Mapping Dictionaries (`//go:embed data`)**:
-> Administrative division and EN-ZH mapping dictionaries under `internal/geodata/data/` (`admin1CodesASCII_zh.json`, `admin2Codes_zh.json`, `country_codes.json`, etc.) are **automatically embedded into `libphotools.dylib` and the `photools` binary** at compile-time. When distributing the `.dylib` or `.dmg` to other users, these dictionaries are fully bundled and require no manual file copying. (To regenerate dictionaries, run `python3 internal/geodata/data/generate_all.py`).
+> Administrative division and EN-ZH mapping dictionaries under `pkg/geodata/data/` (`admin1CodesASCII_zh.json`, `admin2Codes_zh.json`, `country_codes.json`, etc.) are **automatically embedded into `libphotools.dylib` and the `photools` binary** at compile-time. When distributing the `.dylib` or `.dmg` to other users, these dictionaries are fully bundled and require no manual file copying. (To regenerate dictionaries, run `python3 pkg/geodata/data/generate_all.py`).
 
 ---
 

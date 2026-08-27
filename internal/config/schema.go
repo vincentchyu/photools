@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vincentchyu/photo-processing/internal/domain"
+	"github.com/vincentchyu/photools/internal/domain"
 )
 
 // OptionScope 标识设置项的作用范围
@@ -39,6 +39,7 @@ type GlobalSettings struct {
 	BaseDir       string   `json:"base_dir"`
 	SourceDir     string   `json:"source_dir"`
 	TargetDir     string   `json:"target_dir"`
+	GPXDir        string   `json:"gpx_dir"`        // GPX 轨迹目录 (默认 ~/.config/gpx)
 	FlatMode      bool     `json:"flat_mode"`      // 忽略传统分层目录结构，在指定目录下直接扫描并原地保存/处理
 	RawExtensions []string `json:"raw_extensions"` // RAW 格式白名单
 	Workers       int      `json:"workers"`        // 并发处理协程数
@@ -61,6 +62,15 @@ type PluginOpt struct {
 	Options  map[string]interface{} `json:"options"`
 }
 
+// DefaultGPXDir 返回内置默认的全局 GPX 轨迹目录 (~/.config/gpx)
+func DefaultGPXDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return filepath.Join(".config", "gpx")
+	}
+	return filepath.Join(home, ".config", "gpx")
+}
+
 // DefaultGlobalSettings 返回内置默认的全局设置
 func DefaultGlobalSettings(baseDir ...string) GlobalSettings {
 	bDir := ""
@@ -80,6 +90,7 @@ func DefaultGlobalSettings(baseDir ...string) GlobalSettings {
 		BaseDir:       bDir,
 		SourceDir:     filepath.Join(bDir, "Inbox"),
 		TargetDir:     filepath.Join(bDir, "Processed"),
+		GPXDir:        DefaultGPXDir(),
 		FlatMode:      false,
 		RawExtensions: []string{"nef", "cr3", "arw", "dng", "raf", "rw2", "orf"},
 		Workers:       runtime.NumCPU(),
@@ -205,10 +216,18 @@ func GlobalOptionSpecs() []OptionSpec {
 		{
 			Key:          "base_dir",
 			Name:         "工作区根目录 (BaseDir)",
-			Description:  "基础工作目录，包含 Inbox/GPX/Processed/Logs 等子目录",
+			Description:  "基础工作目录，包含 Inbox/Processed/Logs 等子目录",
 			Type:         TypeString,
 			Scope:        ScopeGlobal,
 			DefaultValue: "~/Pictures/GPS",
+		},
+		{
+			Key:          "gpx_dir",
+			Name:         "GPX 轨迹目录 (GPXDir)",
+			Description:  "GPX 轨迹文件所在目录（默认 ~/.config/gpx）",
+			Type:         TypeString,
+			Scope:        ScopeGlobal,
+			DefaultValue: "~/.config/gpx",
 		},
 		{
 			Key:          "source_dir",

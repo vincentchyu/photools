@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vincentchyu/photo-processing/internal/domain"
+	"github.com/vincentchyu/photools/internal/domain"
 )
 
 func TestNewSessionConfig_Defaults(t *testing.T) {
@@ -14,6 +14,10 @@ func TestNewSessionConfig_Defaults(t *testing.T) {
 
 	if sc.Global.BaseDir != tempDir {
 		t.Errorf("expected BaseDir %s, got %s", tempDir, sc.Global.BaseDir)
+	}
+
+	if sc.Global.GPXDir != DefaultGPXDir() {
+		t.Errorf("expected GPXDir %s, got %s", DefaultGPXDir(), sc.Global.GPXDir)
 	}
 
 	if sc.Global.FlatMode {

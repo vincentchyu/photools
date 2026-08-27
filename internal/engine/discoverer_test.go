@@ -132,18 +132,62 @@ func TestDiscoverer_NonExistentDir(t *testing.T) {
 	}
 }
 
+func TestIsAllowedGPXTrack(t *testing.T) {
+	cases := []struct {
+		filename string
+		expected bool
+	}{
+		{"hiking-中国-广东-白云山-20250322.gpx", true},
+		{"walking-中国-广东-海珠湖-20250501.gpx", true},
+		{"hiking.gpx", true},
+		{"walking.GPX", true},
+		{"driving-中国-新疆-孟克特古道-20260613.gpx", false},
+		{"driving-中国-新疆-伊犁到乌鲁木齐-20260613.gpx", false},
+		{"hiking-中国-广东-白云山-20250322.gpx.bak", false},
+		{".hiking-hidden.gpx", false},
+		{"cycling-route.gpx", false},
+		{"notes.txt", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.filename, func(t *testing.T) {
+			got := IsAllowedGPXTrack(tc.filename)
+			if got != tc.expected {
+				t.Errorf("IsAllowedGPXTrack(%q) = %v, expected %v", tc.filename, got, tc.expected)
+			}
+		})
+	}
+}
+
 func TestListGPXFiles(t *testing.T) {
 	tempDir := t.TempDir()
 
-	_ = os.WriteFile(filepath.Join(tempDir, "track1.gpx"), []byte("gpx"), 0o644)
-	_ = os.WriteFile(filepath.Join(tempDir, "track2.GPX"), []byte("gpx"), 0o644)
+	// 允许的
+	_ = os.WriteFile(filepath.Join(tempDir, "hiking-day1.gpx"), []byte("gpx"), 0o644)
+	_ = os.WriteFile(filepath.Join(tempDir, "walking-day2.GPX"), []byte("gpx"), 0o644)
+	// 排除的 (driving / bak / 其它扩展名 / 隐藏文件)
+	_ = os.WriteFile(filepath.Join(tempDir, "driving-xinjiang.gpx"), []byte("gpx"), 0o644)
+	_ = os.WriteFile(filepath.Join(tempDir, "hiking-day1.gpx.bak"), []byte("bak"), 0o644)
+	_ = os.WriteFile(filepath.Join(tempDir, ".hiking-hidden.gpx"), []byte("gpx"), 0o644)
 	_ = os.WriteFile(filepath.Join(tempDir, "ignore.txt"), []byte("txt"), 0o644)
+
+	// 子文件夹内的文件（必须不被递归扫描）
+	subDir := filepath.Join(tempDir, "sub_tracks")
+	_ = os.MkdirAll(subDir, 0o755)
+	_ = os.WriteFile(filepath.Join(subDir, "hiking-in-sub.gpx"), []byte("gpx"), 0o644)
 
 	gpxs, err := ListGPXFiles(tempDir)
 	if err != nil {
 		t.Fatalf("ListGPXFiles failed: %v", err)
 	}
 	if len(gpxs) != 2 {
-		t.Errorf("expected 2 gpx files, got %d", len(gpxs))
+		t.Fatalf("expected exactly 2 gpx files, got %d: %v", len(gpxs), gpxs)
+	}
+
+	expectedNames := []string{"hiking-day1.gpx", "walking-day2.GPX"}
+	for i, g := range gpxs {
+		if filepath.Base(g) != expectedNames[i] {
+			t.Errorf("expected [%d] %s, got %s", i, expectedNames[i], filepath.Base(g))
+		}
 	}
 }

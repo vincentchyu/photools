@@ -48,6 +48,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case flatMode
     case flatModeDesc
     case sourceDirectory
+    case gpxDirectory
     case processedDirectory
     case performanceSection
     case rawExtensions
@@ -373,6 +374,7 @@ public final class LanguageManager: ObservableObject {
         .flatMode: "扁平/直接目录模式 (在指定目录下直接扫描并保存)",
         .flatModeDesc: "忽略 Inbox/Processed 分层，直接在源目录下原地识别与规范化处理",
         .sourceDirectory: "待处理照片源目录 (默认 Inbox)",
+        .gpxDirectory: "GPX 轨迹目录 (默认 ~/.config/gpx)",
         .processedDirectory: "规范归档目录 (默认 Processed)",
         .performanceSection: "性能与格式策略",
         .rawExtensions: "识别的 RAW 扩展名列表 (逗号分隔)",
@@ -665,6 +667,7 @@ public final class LanguageManager: ObservableObject {
         .flatMode: "Flat / In-Place Mode (Scan & Process in Place)",
         .flatModeDesc: "Ignore Inbox/Processed hierarchy; scan and normalize in source directory directly",
         .sourceDirectory: "Source Directory (Default Inbox)",
+        .gpxDirectory: "GPX Directory (Default ~/.config/gpx)",
         .processedDirectory: "Processed Directory (Default Processed)",
         .performanceSection: "Performance & Formats",
         .rawExtensions: "Recognized RAW Extensions (Comma Separated)",

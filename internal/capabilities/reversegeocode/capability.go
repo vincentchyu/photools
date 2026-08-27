@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/vincentchyu/photo-processing/internal/domain"
-	"github.com/vincentchyu/photo-processing/internal/exiftool"
-	"github.com/vincentchyu/photo-processing/internal/geocoding"
+	"github.com/vincentchyu/photools/internal/domain"
+	"github.com/vincentchyu/photools/internal/exiftool"
+	"github.com/vincentchyu/photools/pkg/geocoding"
 )
 
 // Config 封装逆地理编码插件配置
@@ -56,7 +56,7 @@ func (c *Capability) ID() domain.CapabilityID {
 }
 
 func (c *Capability) Name() string {
-	return "逆地理编码与地名元数据写入"
+	return "离线逆地理编码 (Reverse Geocode)"
 }
 
 func (c *Capability) Description() string {
@@ -97,14 +97,14 @@ func (c *Capability) Init(ctx context.Context, report func(domain.PluginInitRepo
 	}
 
 	c.initOnce.Do(func() {
-		cb := func(stage string, percent float64, msg string, status domain.PluginHealthStatus, err error) {
+		cb := func(stage string, percent float64, msg string, status geocoding.HealthStatus, err error) {
 			rep := domain.PluginInitReport{
 				PluginID: c.ID(),
 				Name:     c.Name(),
 				Stage:    stage,
 				Message:  msg,
 				Percent:  percent,
-				Status:   status,
+				Status:   domain.PluginHealthStatus(status),
 				Err:      err,
 			}
 			c.lastReport = rep

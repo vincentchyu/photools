@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/vincentchyu/photo-processing/internal/domain"
-	"github.com/vincentchyu/photo-processing/internal/exiftool"
+	"github.com/vincentchyu/photools/internal/domain"
+	"github.com/vincentchyu/photools/internal/exiftool"
 )
 
 // Config 封装 GPX 匹配能力初始化配置
@@ -196,8 +196,9 @@ func (c *Capability) PlanPrecheck(ctx context.Context, actx *domain.AssetContext
 		}
 	}
 
+	candidateGPX := FilterGPXFilesByDate(c.gpxFiles, meta.DateTimeOriginal)
 	var gpxNames []string
-	for _, g := range c.gpxFiles {
+	for _, g := range candidateGPX {
 		gpxNames = append(gpxNames, filepath.Base(g))
 	}
 	return domain.CapabilityPlan{
@@ -224,8 +225,11 @@ func (c *Capability) ExecuteProcess(ctx context.Context, actx *domain.AssetConte
 		actx.UpdateMetadata(meta)
 	}
 
-	// 2. 写入主文件 GPS (RAW 或 JPG)
-	output, err := exiftool.WriteGeotag(c.runner, primary, c.gpxFiles, c.geosync)
+	// 2. 按拍摄日期智能筛选相关 GPX 轨迹（±1 天容差）
+	targetGPX := FilterGPXFilesByDate(c.gpxFiles, primaryMeta.DateTimeOriginal)
+
+	// 3. 写入主文件 GPS (RAW 或 JPG)
+	output, err := exiftool.WriteGeotag(c.runner, primary, targetGPX, c.geosync)
 	if err != nil {
 		return fmt.Errorf("主文件写入 GPS 失败: %s", exiftool.ClassifyFailure(output, err))
 	}
@@ -260,10 +264,15 @@ func (c *Capability) ExecuteProcess(ctx context.Context, actx *domain.AssetConte
 	}
 
 	if sendEvent != nil {
+		var gpxNames []string
+		for _, g := range targetGPX {
+			gpxNames = append(gpxNames, filepath.Base(g))
+		}
+		trackInfo := strings.Join(gpxNames, ", ")
 		sendEvent(domain.ProgressEvent{
 			Stage:   domain.StageGeotag,
 			Level:   domain.LevelSuccess,
-			Message: fmt.Sprintf("GPS 写入并同步成功：%s (%s)", actx.Asset.DisplayName(), updatedMeta.GPSPosition),
+			Message: fmt.Sprintf("GPS 写入并同步成功：%s (%s) [匹配轨迹: %s]", actx.Asset.DisplayName(), updatedMeta.GPSPosition, trackInfo),
 			Asset:   &actx.Asset,
 		})
 	}

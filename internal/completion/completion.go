@@ -126,8 +126,9 @@ _photools() {
                     ;;
                 geotag)
                     _arguments -s \
-                        '-base-dir[工作根目录 (包含 Inbox/GPX/Processed/Logs)]:目录:_files -/' \
+                        '-base-dir[工作根目录 (包含 Inbox/Processed/Logs)]:目录:_files -/' \
                         '-source-dir[待处理照片输入源目录 (默认 Inbox)]:源目录:_files -/' \
+                        '-gpx-dir[GPX 轨迹文件存放目录 (默认 ~/.config/gpx)]:轨迹目录:_files -/' \
                         '-processed-dir[归档分类存放的目标根目录 (默认 Processed)]:目标目录:_files -/' \
                         '-flat[扁平原地模式 (直接扫描并就地处理/保存)]' \
                         '-in-place[原地规范重命名归档，不建立 YYYY/MMDD 子目录]' \
@@ -158,9 +159,9 @@ _photools() {
                     ;;
                 pipeline)
                     _arguments -s \
-                        '-base-dir[工作根目录 (包含 Inbox/GPX/Processed/Logs)]:工作目录:_files -/' \
+                        '-base-dir[工作根目录 (包含 Inbox/Processed/Logs)]:工作目录:_files -/' \
                         '-source-dir[待处理的照片原始输入目录 (默认 Inbox)]:源目录:_files -/' \
-                        '-gpx-dir[GPX 轨迹文件存放目录 (默认 GPX)]:轨迹目录:_files -/' \
+                        '-gpx-dir[GPX 轨迹文件存放目录 (默认 ~/.config/gpx)]:轨迹目录:_files -/' \
                         '-processed-dir[归档分类存放的目标根目录 (默认 Processed)]:目标目录:_files -/' \
                         '-flat[扁平原地模式 (忽略 Inbox/Processed 分层，直接扫描并就地处理/保存)]' \
                         '-in-place[原地规范重命名，不建立 YYYY/MMDD 子目录]' \
@@ -244,7 +245,7 @@ func GenerateBash(w io.Writer) {
             ;;
         geotag)
             if [[ "$cur" == -* ]]; then
-                COMPREPLY=( $(compgen -W "-base-dir -source-dir -processed-dir -flat -in-place -geosync -raw-exts -template -geocode -interpolate -interpolate-window -allow-no-gps -workers -test -backup -backup-dir" -- "${cur}") )
+                COMPREPLY=( $(compgen -W "-base-dir -source-dir -gpx-dir -processed-dir -flat -in-place -geosync -raw-exts -template -geocode -interpolate -interpolate-window -allow-no-gps -workers -test -backup -backup-dir" -- "${cur}") )
             fi
             ;;
         geocode)
@@ -306,8 +307,9 @@ complete -c photools -n "__fish_seen_subcommand_from install remove get add dele
 complete -c photools -n "__fish_seen_subcommand_from install remove get add delete rm" -a all -d "一键安装全部大洲与中国高精包"
 
 # geotag 选项
-complete -c photools -n "__fish_seen_subcommand_from geotag" -l base-dir -d "工作根目录 (包含 Inbox/GPX/Processed/Logs)"
+complete -c photools -n "__fish_seen_subcommand_from geotag" -l base-dir -d "工作根目录 (包含 Inbox/Processed/Logs)"
 complete -c photools -n "__fish_seen_subcommand_from geotag" -l source-dir -d "待处理照片输入源目录"
+complete -c photools -n "__fish_seen_subcommand_from geotag" -l gpx-dir -d "GPX 轨迹文件存放目录 (默认 ~/.config/gpx)"
 complete -c photools -n "__fish_seen_subcommand_from geotag" -l processed-dir -d "归档目标根目录"
 complete -c photools -n "__fish_seen_subcommand_from geotag" -l flat -d "扁平原地模式 (直接扫描并就地处理/保存)"
 complete -c photools -n "__fish_seen_subcommand_from geotag" -l in-place -d "原地规范重命名归档，不建立 YYYY/MMDD 子目录"
@@ -332,7 +334,7 @@ complete -c photools -n "__fish_seen_subcommand_from geocode" -l workers -d "并
 # pipeline 选项
 complete -c photools -n "__fish_seen_subcommand_from pipeline" -l base-dir -d "工作根目录"
 complete -c photools -n "__fish_seen_subcommand_from pipeline" -l source-dir -d "待处理照片原始输入目录"
-complete -c photools -n "__fish_seen_subcommand_from pipeline" -l gpx-dir -d "GPX 轨迹文件存放目录"
+complete -c photools -n "__fish_seen_subcommand_from pipeline" -l gpx-dir -d "GPX 轨迹文件存放目录 (默认 ~/.config/gpx)"
 complete -c photools -n "__fish_seen_subcommand_from pipeline" -l processed-dir -d "归档目标根目录"
 complete -c photools -n "__fish_seen_subcommand_from pipeline" -l flat -d "扁平原地模式 (直接扫描并就地处理/保存)"
 complete -c photools -n "__fish_seen_subcommand_from pipeline" -l in-place -d "原地规范重命名，不建立 YYYY/MMDD 子目录"

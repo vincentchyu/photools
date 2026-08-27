@@ -8,15 +8,16 @@ import (
 
 func TestEnsureStandardDirectories(t *testing.T) {
 	tempDir := t.TempDir()
+	customGPX := filepath.Join(tempDir, "custom_gpx")
 
-	statuses, err := EnsureStandardDirectories(tempDir)
+	statuses, err := EnsureStandardDirectories(tempDir, customGPX)
 	if err != nil {
 		t.Fatalf("EnsureStandardDirectories 失败: %v", err)
 	}
 
 	expectedDirs := []string{
 		filepath.Join(tempDir, "Inbox"),
-		filepath.Join(tempDir, "GPX"),
+		customGPX,
 		filepath.Join(tempDir, "Processed", "geotag"),
 		filepath.Join(tempDir, "Processed", "organize"),
 		filepath.Join(tempDir, "Logs"),

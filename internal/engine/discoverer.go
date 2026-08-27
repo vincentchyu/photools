@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vincentchyu/photo-processing/internal/domain"
+	"github.com/vincentchyu/photools/internal/domain"
 )
 
 // Discoverer 负责扫描指定目录并聚合 AssetGroup
@@ -160,7 +160,19 @@ func (d *Discoverer) isRawExt(ext string) bool {
 	return ok
 }
 
-// ListGPXFiles 扫描指定目录下的全部 .gpx 轨迹文件
+// IsAllowedGPXTrack 判断文件名是否为受支持的 GPX 运动轨迹（仅限 hiking 与 walking，且后缀为 .gpx）
+func IsAllowedGPXTrack(filename string) bool {
+	if strings.HasPrefix(filename, ".") {
+		return false
+	}
+	if !strings.EqualFold(filepath.Ext(filename), ".gpx") {
+		return false
+	}
+	base := strings.ToLower(strings.TrimSuffix(filename, filepath.Ext(filename)))
+	return strings.HasPrefix(base, "hiking") || strings.HasPrefix(base, "walking")
+}
+
+// ListGPXFiles 扫描指定目录下的全部有效 .gpx 轨迹文件（不递归子目录，仅保留 hiking 与 walking 轨迹）
 func ListGPXFiles(gpxDir string) ([]string, error) {
 	if _, err := os.Stat(gpxDir); err != nil {
 		if os.IsNotExist(err) {
@@ -169,33 +181,19 @@ func ListGPXFiles(gpxDir string) ([]string, error) {
 		return nil, err
 	}
 
-	var gpxFiles []string
-	cleanGpxDir := filepath.Clean(gpxDir)
-	err := filepath.WalkDir(
-		gpxDir, func(path string, entry os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if entry.IsDir() {
-				if filepath.Clean(path) == cleanGpxDir {
-					return nil
-				}
-				if strings.HasPrefix(entry.Name(), ".") || IsIgnoredDir(entry.Name()) {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if strings.HasPrefix(entry.Name(), ".") {
-				return nil
-			}
-			if strings.EqualFold(filepath.Ext(entry.Name()), ".gpx") {
-				gpxFiles = append(gpxFiles, path)
-			}
-			return nil
-		},
-	)
+	entries, err := os.ReadDir(gpxDir)
 	if err != nil {
 		return nil, err
+	}
+
+	var gpxFiles []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue // 严格不递归子目录
+		}
+		if IsAllowedGPXTrack(entry.Name()) {
+			gpxFiles = append(gpxFiles, filepath.Join(gpxDir, entry.Name()))
+		}
 	}
 
 	sort.Strings(gpxFiles)

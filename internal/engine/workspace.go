@@ -18,7 +18,19 @@ type DirMeaning struct {
 }
 
 // GetStandardDirectorySpecs 返回规范目录的定义列表
-func GetStandardDirectorySpecs(baseDir string) []DirMeaning {
+func GetStandardDirectorySpecs(baseDir string, customGPXDir ...string) []DirMeaning {
+	gpxPath := ""
+	if len(customGPXDir) > 0 && customGPXDir[0] != "" {
+		gpxPath = customGPXDir[0]
+	} else {
+		home, _ := os.UserHomeDir()
+		if home != "" {
+			gpxPath = filepath.Join(home, ".config", "gpx")
+		} else {
+			gpxPath = filepath.Join(".config", "gpx")
+		}
+	}
+
 	return []DirMeaning{
 		{
 			Name:     "Inbox",
@@ -30,10 +42,10 @@ func GetStandardDirectorySpecs(baseDir string) []DirMeaning {
 		},
 		{
 			Name:     "GPX",
-			RelPath:  "GPX",
-			FullPath: filepath.Join(baseDir, "GPX"),
+			RelPath:  "~/.config/gpx",
+			FullPath: gpxPath,
 			Icon:     "🗺️",
-			Usage:    "移动设备或手表导出的 GPX 轨迹文件",
+			Usage:    "移动设备或手表导出的 GPX 轨迹文件 (默认 ~/.config/gpx)",
 			ForMode:  "GPS 轨迹匹配",
 		},
 		{
@@ -64,8 +76,8 @@ func GetStandardDirectorySpecs(baseDir string) []DirMeaning {
 }
 
 // InspectStandardDirectories 检查当前工作目录下的规范目录状态
-func InspectStandardDirectories(baseDir string) []DirMeaning {
-	specs := GetStandardDirectorySpecs(baseDir)
+func InspectStandardDirectories(baseDir string, customGPXDir ...string) []DirMeaning {
+	specs := GetStandardDirectorySpecs(baseDir, customGPXDir...)
 	for i := range specs {
 		info, err := os.Stat(specs[i].FullPath)
 		if err == nil && info.IsDir() {
@@ -82,8 +94,8 @@ func InspectStandardDirectories(baseDir string) []DirMeaning {
 }
 
 // EnsureStandardDirectories 检查并自动创建规范目录
-func EnsureStandardDirectories(baseDir string) ([]DirMeaning, error) {
-	specs := InspectStandardDirectories(baseDir)
+func EnsureStandardDirectories(baseDir string, customGPXDir ...string) ([]DirMeaning, error) {
+	specs := InspectStandardDirectories(baseDir, customGPXDir...)
 	for i := range specs {
 		if !specs[i].Exists {
 			if err := os.MkdirAll(specs[i].FullPath, 0o755); err != nil {

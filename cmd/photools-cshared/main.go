@@ -44,17 +44,17 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/vincentchyu/photo-processing/internal/capabilities/datearchive"
-	"github.com/vincentchyu/photo-processing/internal/capabilities/gpsinterpolate"
-	"github.com/vincentchyu/photo-processing/internal/capabilities/gpxmatch"
-	"github.com/vincentchyu/photo-processing/internal/capabilities/reversegeocode"
-	"github.com/vincentchyu/photo-processing/internal/config"
-	"github.com/vincentchyu/photo-processing/internal/domain"
-	"github.com/vincentchyu/photo-processing/internal/engine"
-	"github.com/vincentchyu/photo-processing/internal/exiftool"
-	"github.com/vincentchyu/photo-processing/internal/geocoding"
-	"github.com/vincentchyu/photo-processing/internal/geodata"
-	"github.com/vincentchyu/photo-processing/internal/pipeline"
+	"github.com/vincentchyu/photools/internal/capabilities/datearchive"
+	"github.com/vincentchyu/photools/internal/capabilities/gpsinterpolate"
+	"github.com/vincentchyu/photools/internal/capabilities/gpxmatch"
+	"github.com/vincentchyu/photools/internal/capabilities/reversegeocode"
+	"github.com/vincentchyu/photools/internal/config"
+	"github.com/vincentchyu/photools/internal/domain"
+	"github.com/vincentchyu/photools/internal/engine"
+	"github.com/vincentchyu/photools/internal/exiftool"
+	"github.com/vincentchyu/photools/internal/pipeline"
+	"github.com/vincentchyu/photools/pkg/geocoding"
+	"github.com/vincentchyu/photools/pkg/geodata"
 )
 
 var (

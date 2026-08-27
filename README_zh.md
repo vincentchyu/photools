@@ -165,7 +165,7 @@ go build -ldflags="-s -w" -o dist/photools ./cmd/photools
 
 > [!NOTE]
 > **内嵌映射字典说明 (`//go:embed data`)**：
-> `internal/geodata/data/` 目录下的中英文地名/行政区划字典（`admin1CodesASCII_zh.json`, `admin2Codes_zh.json`, `country_codes.json` 等）会在编译期**自动内嵌打包进 `libphotools.dylib` 与 `photools` 二进制**中。分发给其他用户时随动态库自带，无需手动拷贝字典文件。如需重新生成字典可执行 `python3 internal/geodata/data/generate_all.py`。
+> `pkg/geodata/data/` 目录下的中英文地名/行政区划字典（`admin1CodesASCII_zh.json`, `admin2Codes_zh.json`, `country_codes.json` 等）会在编译期**自动内嵌打包进 `libphotools.dylib` 与 `photools` 二进制**中。分发给其他用户时随动态库自带，无需手动拷贝字典文件。如需重新生成字典可执行 `python3 pkg/geodata/data/generate_all.py`。
 
 ---
 

@@ -432,3 +432,12 @@ func GetAllAdmin2ZH() map[string]AdminCodeMeta {
 	maps.Copy(res, Admin2ZHMap)
 	return res
 }
+
+// GetCountryNameZH 获取 ISO 国家两字母代码对应的标准中文名称 (如 "CN" -> "中国", "US" -> "美国")
+func GetCountryNameZH(code string) string {
+	meta := GetCountryMeta(code)
+	if meta.NameZH != "" {
+		return meta.NameZH
+	}
+	return code
+}

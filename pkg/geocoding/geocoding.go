@@ -9,8 +9,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/vincentchyu/photo-processing/internal/domain"
 )
 
 // PackLoadInfo 记录单个数据包的装载详情
@@ -95,7 +93,7 @@ func (rg *ReverseGeocoder) ensureInitialized() {
 }
 
 // InitProgressive 渐进式异步初始化逆地理编码器，提供细粒度的步骤与进度汇报 (使用 sync.Once 保证全局只装载一次)
-func (rg *ReverseGeocoder) InitProgressive(ctx context.Context, cb func(stage string, percent float64, msg string, status domain.PluginHealthStatus, err error)) error {
+func (rg *ReverseGeocoder) InitProgressive(ctx context.Context, cb InitProgressCallback) error {
 	rg.mu.RLock()
 	alreadyInit := rg.initialized && rg.tree != nil
 	stats := rg.stats
@@ -103,9 +101,9 @@ func (rg *ReverseGeocoder) InitProgressive(ctx context.Context, cb func(stage st
 
 	if alreadyInit {
 		if cb != nil {
-			status := domain.HealthReady
+			status := HealthReady
 			if len(stats.Packs) == 0 {
-				status = domain.HealthDegraded
+				status = HealthDegraded
 			}
 			cb("就绪", 1.0, fmt.Sprintf("离线地理库已就绪 (共 %d 个点位 / %d 个数据包)", stats.TotalPoints, len(stats.Packs)), status, nil)
 		}
@@ -120,7 +118,7 @@ func (rg *ReverseGeocoder) InitProgressive(ctx context.Context, cb func(stage st
 
 		// 1. 装载内嵌基础亚洲地名
 		if cb != nil {
-			cb("装载基础库", 0.1, fmt.Sprintf("正在装载内嵌核心地名库 (%d 个点位)...", len(embeddedAsiaPoints)), domain.HealthReady, nil)
+			cb("装载基础库", 0.1, fmt.Sprintf("正在装载内嵌核心地名库 (%d 个点位)...", len(embeddedAsiaPoints)), HealthReady, nil)
 		}
 		rg.allPoints = make([]GeoPoint, len(embeddedAsiaPoints))
 		copy(rg.allPoints, embeddedAsiaPoints)
@@ -141,7 +139,7 @@ func (rg *ReverseGeocoder) InitProgressive(ctx context.Context, cb func(stage st
 					rg.customPoints = customList
 					rg.stats.CustomPoints = len(customList)
 					if cb != nil {
-						cb("用户自定义地名", 0.2, fmt.Sprintf("已装载用户自定义地点 (%d 个点位)", len(customList)), domain.HealthReady, nil)
+						cb("用户自定义地名", 0.2, fmt.Sprintf("已装载用户自定义地点 (%d 个点位)", len(customList)), HealthReady, nil)
 					}
 				}
 			}
@@ -182,7 +180,7 @@ func (rg *ReverseGeocoder) InitProgressive(ctx context.Context, cb func(stage st
 
 				packPercent := 0.2 + (0.6 * float64(idx) / float64(len(packFiles)))
 				if cb != nil {
-					cb("装载离线数据包", packPercent, fmt.Sprintf("正在解析离线地理包 [%s] (%d/%d)...", entry.Name(), idx+1, len(packFiles)), domain.HealthReady, nil)
+					cb("装载离线数据包", packPercent, fmt.Sprintf("正在解析离线地理包 [%s] (%d/%d)...", entry.Name(), idx+1, len(packFiles)), HealthReady, nil)
 				}
 
 				loadStart := time.Now()
@@ -215,7 +213,7 @@ func (rg *ReverseGeocoder) InitProgressive(ctx context.Context, cb func(stage st
 
 		// 4. 构建 3D 球面 KD-Tree 空间索引
 		if cb != nil {
-			cb("构建空间索引", 0.85, "正在构建 3D 球面 KD-Tree 空间加速索引...", domain.HealthReady, nil)
+			cb("构建空间索引", 0.85, "正在构建 3D 球面 KD-Tree 空间加速索引...", HealthReady, nil)
 		}
 
 		if len(added) > 0 {
@@ -241,11 +239,11 @@ func (rg *ReverseGeocoder) InitProgressive(ctx context.Context, cb func(stage st
 		// 5. 汇报最终就绪状态
 		if len(rg.stats.Packs) == 0 {
 			if cb != nil {
-				cb("降级就绪", 1.0, fmt.Sprintf("⚠️ 未安装外挂离线数据包，已启用内置基础库 (%d 点位)", rg.stats.TotalPoints), domain.HealthDegraded, nil)
+				cb("降级就绪", 1.0, fmt.Sprintf("⚠️ 未安装外挂离线数据包，已启用内置基础库 (%d 点位)", rg.stats.TotalPoints), HealthDegraded, nil)
 			}
 		} else {
 			if cb != nil {
-				cb("就绪", 1.0, fmt.Sprintf("离线地理库就绪 (已加载 %d 点位 / %d 个数据包，建树 %.2fs)", rg.stats.TotalPoints, len(rg.stats.Packs), rg.stats.TreeBuildTime.Seconds()), domain.HealthReady, nil)
+				cb("就绪", 1.0, fmt.Sprintf("离线地理库就绪 (已加载 %d 点位 / %d 个数据包，建树 %.2fs)", rg.stats.TotalPoints, len(rg.stats.Packs), rg.stats.TreeBuildTime.Seconds()), HealthReady, nil)
 			}
 		}
 	})

@@ -7,15 +7,15 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/vincentchyu/photo-processing/internal/capabilities/datearchive"
-	"github.com/vincentchyu/photo-processing/internal/capabilities/gpsinterpolate"
-	"github.com/vincentchyu/photo-processing/internal/capabilities/gpxmatch"
-	"github.com/vincentchyu/photo-processing/internal/capabilities/reversegeocode"
-	"github.com/vincentchyu/photo-processing/internal/config"
-	"github.com/vincentchyu/photo-processing/internal/domain"
-	"github.com/vincentchyu/photo-processing/internal/engine"
-	"github.com/vincentchyu/photo-processing/internal/exiftool"
-	"github.com/vincentchyu/photo-processing/internal/geocoding"
+	"github.com/vincentchyu/photools/internal/capabilities/datearchive"
+	"github.com/vincentchyu/photools/internal/capabilities/gpsinterpolate"
+	"github.com/vincentchyu/photools/internal/capabilities/gpxmatch"
+	"github.com/vincentchyu/photools/internal/capabilities/reversegeocode"
+	"github.com/vincentchyu/photools/internal/config"
+	"github.com/vincentchyu/photools/internal/domain"
+	"github.com/vincentchyu/photools/internal/engine"
+	"github.com/vincentchyu/photools/internal/exiftool"
+	"github.com/vincentchyu/photools/pkg/geocoding"
 )
 
 // PipelineOptions 封装从 CLI 或 TUI 传入的组合配置
@@ -77,7 +77,16 @@ func Build(opts PipelineOptions) (domain.Task, error) {
 
 	gpxDir := opts.GPXDir
 	if gpxDir == "" {
-		gpxDir = filepath.Join(baseDir, "GPX")
+		if opts.Session != nil && opts.Session.Global.GPXDir != "" {
+			gpxDir = opts.Session.Global.GPXDir
+		} else {
+			gpxDir = config.DefaultGPXDir()
+		}
+	}
+	if len(gpxDir) >= 2 && gpxDir[:2] == "~/" {
+		if home, err := os.UserHomeDir(); err == nil {
+			gpxDir = filepath.Join(home, gpxDir[2:])
+		}
 	}
 	gpxDir, _ = filepath.Abs(gpxDir)
 

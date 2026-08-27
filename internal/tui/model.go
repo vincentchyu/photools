@@ -19,16 +19,16 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vincentchyu/photo-processing/internal/capabilities/datearchive"
-	"github.com/vincentchyu/photo-processing/internal/capabilities/gpsinterpolate"
-	"github.com/vincentchyu/photo-processing/internal/capabilities/gpxmatch"
-	"github.com/vincentchyu/photo-processing/internal/capabilities/reversegeocode"
-	"github.com/vincentchyu/photo-processing/internal/config"
-	"github.com/vincentchyu/photo-processing/internal/domain"
-	"github.com/vincentchyu/photo-processing/internal/engine"
-	"github.com/vincentchyu/photo-processing/internal/exiftool"
-	"github.com/vincentchyu/photo-processing/internal/geocoding"
-	"github.com/vincentchyu/photo-processing/internal/pipeline"
+	"github.com/vincentchyu/photools/internal/capabilities/datearchive"
+	"github.com/vincentchyu/photools/internal/capabilities/gpsinterpolate"
+	"github.com/vincentchyu/photools/internal/capabilities/gpxmatch"
+	"github.com/vincentchyu/photools/internal/capabilities/reversegeocode"
+	"github.com/vincentchyu/photools/internal/config"
+	"github.com/vincentchyu/photools/internal/domain"
+	"github.com/vincentchyu/photools/internal/engine"
+	"github.com/vincentchyu/photools/internal/exiftool"
+	"github.com/vincentchyu/photools/internal/pipeline"
+	"github.com/vincentchyu/photools/pkg/geocoding"
 )
 
 type viewState int
@@ -366,7 +366,17 @@ func (m *Model) refreshWorkspace(baseDir string) {
 	}
 
 	// 检查规范目录
-	m.dirSpecs = engine.InspectStandardDirectories(baseDir)
+	gpxDir := m.sessionConfig.Global.GPXDir
+	if gpxDir == "" {
+		gpxDir = config.DefaultGPXDir()
+	}
+	resolvedGPXDir := gpxDir
+	if len(resolvedGPXDir) >= 2 && resolvedGPXDir[:2] == "~/" {
+		if home, err := os.UserHomeDir(); err == nil {
+			resolvedGPXDir = filepath.Join(home, resolvedGPXDir[2:])
+		}
+	}
+	m.dirSpecs = engine.InspectStandardDirectories(baseDir, resolvedGPXDir)
 
 	// 刷新离线地理库状态
 	if geocoding.GetDefault() != nil {
@@ -375,7 +385,6 @@ func (m *Model) refreshWorkspace(baseDir string) {
 
 	// 统计数据
 	srcDir := m.sourceDirInput.Value()
-	gpxDir := filepath.Join(baseDir, "GPX")
 	processedDir := m.targetDirInput.Value()
 
 	rawExts := parseExts(m.rawExtsInput.Value())
@@ -389,7 +398,7 @@ func (m *Model) refreshWorkspace(baseDir string) {
 		m.inboxAssetCount = 0
 	}
 
-	if gpxFiles, err := engine.ListGPXFiles(gpxDir); err == nil {
+	if gpxFiles, err := engine.ListGPXFiles(resolvedGPXDir); err == nil {
 		m.gpxCount = len(gpxFiles)
 	} else {
 		m.gpxCount = 0
@@ -1095,7 +1104,7 @@ func (m *Model) buildCurrentTask() (domain.Task, error) {
 		pipeline.PipelineOptions{
 			BaseDir:           m.currentBaseDir,
 			SourceDir:         m.sourceDirInput.Value(),
-			GPXDir:            filepath.Join(m.currentBaseDir, "GPX"),
+			GPXDir:            m.sessionConfig.Global.GPXDir,
 			ProcessedDir:      m.targetDirInput.Value(),
 			Geosync:           m.geosyncInput.Value(),
 			RawExtensions:     rawExts,

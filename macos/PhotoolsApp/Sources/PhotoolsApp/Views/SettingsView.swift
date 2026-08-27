@@ -91,6 +91,15 @@ public struct SettingsView: View {
 
                 Toggle(lang.text(.flatMode), isOn: $store.flatMode)
 
+                HStack {
+                    TextField(lang.text(.gpxDirectory), text: $store.gpxDirectory)
+                    Button(lang.text(.chooseDirectory)) {
+                        chooseDirectory { path in
+                            store.gpxDirectory = path
+                        }
+                    }
+                }
+
                 if !store.flatMode {
                     HStack {
                         TextField(lang.text(.sourceDirectory), text: $store.sourceDirectory)

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vincentchyu/photo-processing/internal/domain"
+	"github.com/vincentchyu/photools/internal/domain"
 )
 
 // Reporter 负责生成用户可读的结构化中文报告

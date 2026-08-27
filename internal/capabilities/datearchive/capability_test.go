@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vincentchyu/photo-processing/internal/domain"
-	"github.com/vincentchyu/photo-processing/internal/engine"
+	"github.com/vincentchyu/photools/internal/domain"
+	"github.com/vincentchyu/photools/internal/engine"
 )
 
 type mockRunner struct {

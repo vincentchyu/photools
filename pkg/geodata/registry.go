@@ -3,7 +3,7 @@ package geodata
 import (
 	"strings"
 
-	"github.com/vincentchyu/photo-processing/internal/geocoding"
+	"github.com/vincentchyu/photools/pkg/geocoding"
 )
 
 // ContinentMeta 大洲与国家数据包元信息

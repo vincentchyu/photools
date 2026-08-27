@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vincentchyu/photo-processing/internal/geocoding"
+	"github.com/vincentchyu/photools/pkg/geocoding"
 )
 
 const (

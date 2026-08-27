@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vincentchyu/photo-processing/internal/domain"
-	"github.com/vincentchyu/photo-processing/internal/geocoding"
+	"github.com/vincentchyu/photools/internal/domain"
+	"github.com/vincentchyu/photools/pkg/geocoding"
 )
 
 type mockRunner struct {

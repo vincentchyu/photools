@@ -44,3 +44,19 @@ func TestBuild_Success(t *testing.T) {
 		t.Errorf("expected 3 capabilities, got %d", len(orch.capabilities))
 	}
 }
+
+func TestBuild_DefaultGPXDir(t *testing.T) {
+	tempDir := t.TempDir()
+	opts := PipelineOptions{
+		BaseDir:        tempDir,
+		EnableGPXMatch: true,
+	}
+
+	task, err := Build(opts)
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+	if task == nil {
+		t.Fatalf("expected task instance, got nil")
+	}
+}

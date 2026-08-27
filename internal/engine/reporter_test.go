@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vincentchyu/photo-processing/internal/domain"
+	"github.com/vincentchyu/photools/internal/domain"
 )
 
 func TestReporter_GenerateReport(t *testing.T) {

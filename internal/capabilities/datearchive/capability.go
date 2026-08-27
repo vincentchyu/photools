@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/vincentchyu/photo-processing/internal/domain"
-	"github.com/vincentchyu/photo-processing/internal/engine"
-	"github.com/vincentchyu/photo-processing/internal/exiftool"
+	"github.com/vincentchyu/photools/internal/domain"
+	"github.com/vincentchyu/photools/internal/engine"
+	"github.com/vincentchyu/photools/internal/exiftool"
 )
 
 // Capability 封装按拍摄日期归档与规范重命名能力 (能力 3)

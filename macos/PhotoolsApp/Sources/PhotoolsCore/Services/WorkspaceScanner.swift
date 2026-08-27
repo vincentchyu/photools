@@ -37,9 +37,51 @@ public struct WorkspaceScanner: Sendable {
         return false
     }
 
+    public static var defaultGPXDirectory: String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return (home as NSString).appendingPathComponent(".config/gpx")
+    }
+
+    // 判定是否为受支持的 GPX 运动轨迹（仅限 hiking 与 walking，且后缀为 .gpx，非隐藏文件）
+    public static func isAllowedGPXTrack(filename: String) -> Bool {
+        if filename.hasPrefix(".") {
+            return false
+        }
+        let url = URL(fileURLWithPath: filename)
+        guard url.pathExtension.lowercased() == "gpx" else {
+            return false
+        }
+        let baseName = url.deletingPathExtension().lastPathComponent.lowercased()
+        return baseName.hasPrefix("hiking") || baseName.hasPrefix("walking")
+    }
+
+    private func scanGPXFiles(gpxDirectory: String) -> [String] {
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: gpxDirectory, isDirectory: &isDir), isDir.boolValue else {
+            return []
+        }
+        guard let items = try? fm.contentsOfDirectory(atPath: gpxDirectory) else {
+            return []
+        }
+
+        var results: [String] = []
+        for item in items {
+            let fullPath = (gpxDirectory as NSString).appendingPathComponent(item)
+            var itemIsDir: ObjCBool = false
+            if fm.fileExists(atPath: fullPath, isDirectory: &itemIsDir), !itemIsDir.boolValue {
+                if Self.isAllowedGPXTrack(filename: item) {
+                    results.append(fullPath)
+                }
+            }
+        }
+        return results.sorted()
+    }
+
     public func scan(
         baseDirectory: String,
         sourceDirectory: String = "",
+        gpxDirectory: String = "",
         rawExtensions: [String] = ["nef", "cr3", "arw", "dng", "raf", "rw2", "orf"]
     ) throws -> WorkspaceSummary {
         let fm = FileManager.default
@@ -49,7 +91,12 @@ public struct WorkspaceScanner: Sendable {
         }
 
         let inboxDirectory = sourceDirectory.isEmpty ? (baseDirectory as NSString).appendingPathComponent("Inbox") : sourceDirectory
-        let gpxDirectory = (baseDirectory as NSString).appendingPathComponent("GPX")
+        let effectiveGPXDir: String
+        if gpxDirectory.trimmingCharacters(in: .whitespaces).isEmpty {
+            effectiveGPXDir = Self.defaultGPXDirectory
+        } else {
+            effectiveGPXDir = (gpxDirectory as NSString).expandingTildeInPath
+        }
         let processedDirectory = (baseDirectory as NSString).appendingPathComponent("Processed")
         let logsDirectory = (baseDirectory as NSString).appendingPathComponent("Logs")
         let inboxBakDirectory = (baseDirectory as NSString).appendingPathComponent("Inbox_bak")
@@ -65,7 +112,7 @@ public struct WorkspaceScanner: Sendable {
         }
 
         let assetGroups = scanAssetGroups(inboxDirectory: inboxDirectory, rawExtensions: rawExtensions)
-        let gpxFiles = scanFiles(root: gpxDirectory, ignoreIgnoredDirectories: false) { $0.pathExtension.lowercased() == "gpx" }
+        let gpxFiles = scanGPXFiles(gpxDirectory: effectiveGPXDir)
         let processedFileCount = scanFiles(root: processedDirectory, ignoreIgnoredDirectories: false) { !$0.hasDirectoryPath }.count
         let backupFileCount = scanFiles(root: inboxBakDirectory, ignoreIgnoredDirectories: false) { !$0.hasDirectoryPath }.count
         let pendingReportText = (try? String(contentsOfFile: pendingReportPath, encoding: .utf8)) ?? ""
@@ -73,7 +120,7 @@ public struct WorkspaceScanner: Sendable {
         return WorkspaceSummary(
             baseDirectory: baseDirectory,
             inboxDirectory: inboxDirectory,
-            gpxDirectory: gpxDirectory,
+            gpxDirectory: effectiveGPXDir,
             processedDirectory: processedDirectory,
             logsDirectory: logsDirectory,
             inboxBakDirectory: inboxBakDirectory,

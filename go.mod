@@ -1,4 +1,4 @@
-module github.com/vincentchyu/photo-processing
+module github.com/vincentchyu/photools
 
 go 1.26.2
 
@@ -6,7 +6,6 @@ require (
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/qichengzx/coordtransform v0.0.0-20220708113031-010878418826
 	golang.org/x/term v0.45.0
 )
 

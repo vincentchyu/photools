@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vincentchyu/photo-processing/internal/domain"
-	"github.com/vincentchyu/photo-processing/internal/exiftool"
+	"github.com/vincentchyu/photools/internal/domain"
+	"github.com/vincentchyu/photools/internal/exiftool"
 )
 
 // Config 封装 GPS 智能插值插件配置

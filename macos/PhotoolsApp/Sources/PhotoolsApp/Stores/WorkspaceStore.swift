@@ -107,6 +107,7 @@ public final class WorkspaceStore: ObservableObject {
         }
     }
     @Published public var inPlace: Bool
+    @Published public var gpxDirectory: String
     @Published public var rawExtensions: String
     @Published public var workers: Int
 
@@ -214,6 +215,9 @@ public final class WorkspaceStore: ObservableObject {
             self.processedDirectory = defaultProcessed
         }
 
+        let defaultGPX = WorkspaceScanner.defaultGPXDirectory
+        self.gpxDirectory = UserDefaults.standard.string(forKey: "gpxDirectory") ?? defaultGPX
+
         self.inPlace = UserDefaults.standard.bool(forKey: "inPlace")
         self.rawExtensions = UserDefaults.standard.string(forKey: "rawExtensions") ?? "nef,cr3,arw,dng,raf,rw2,orf"
         
@@ -259,6 +263,14 @@ public final class WorkspaceStore: ObservableObject {
             return (baseDirectory as NSString).appendingPathComponent("Processed")
         }
         return processedDirectory
+    }
+
+    public var effectiveGPXDirectory: String {
+        let trimmed = gpxDirectory.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty {
+            return WorkspaceScanner.defaultGPXDirectory
+        }
+        return (trimmed as NSString).expandingTildeInPath
     }
 
     public var selectedAsset: PhotoAssetGroup? {
@@ -324,6 +336,7 @@ public final class WorkspaceStore: ObservableObject {
     public func persistPreferences() {
         UserDefaults.standard.set(baseDirectory, forKey: "baseDirectory")
         UserDefaults.standard.set(sourceDirectory, forKey: "sourceDirectory")
+        UserDefaults.standard.set(gpxDirectory, forKey: "gpxDirectory")
         UserDefaults.standard.set(processedDirectory, forKey: "processedDirectory")
         UserDefaults.standard.set(flatMode, forKey: "flatMode")
         UserDefaults.standard.set(inPlace, forKey: "inPlace")
@@ -346,6 +359,7 @@ public final class WorkspaceStore: ObservableObject {
             let summary = try scanner.scan(
                 baseDirectory: baseDirectory,
                 sourceDirectory: effectiveSourceDirectory,
+                gpxDirectory: effectiveGPXDirectory,
                 rawExtensions: parsedRawExtensions
             )
             self.summary = summary
@@ -453,7 +467,7 @@ public final class WorkspaceStore: ObservableObject {
         currentStageIndex = 0
         clearLiveLog() // 启动前清空旧日志
 
-        let gpxDir = (baseDirectory as NSString).appendingPathComponent("GPX")
+        let gpxDir = effectiveGPXDirectory
         let backupDir = testBackup ? (baseDirectory as NSString).appendingPathComponent("Inbox_bak") : ""
 
         let options = PipelineRunOptions(
@@ -555,7 +569,7 @@ public final class WorkspaceStore: ObservableObject {
                 }
             }
         } else {
-            let gpxDir = (baseDirectory as NSString).appendingPathComponent("GPX")
+            let gpxDir = effectiveGPXDirectory
             let options = PipelineRunOptions(
                 baseDirectory: baseDirectory,
                 sourceDirectory: srcDir,

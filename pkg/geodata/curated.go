@@ -1,6 +1,6 @@
 package geodata
 
-import "github.com/vincentchyu/photo-processing/internal/geocoding"
+import "github.com/vincentchyu/photools/pkg/geocoding"
 
 // curatedEuropePoints 欧洲精选摄影地与主要城市
 var curatedEuropePoints = []geocoding.GeoPoint{

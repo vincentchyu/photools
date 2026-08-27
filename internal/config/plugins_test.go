@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vincentchyu/photo-processing/internal/domain"
+	"github.com/vincentchyu/photools/internal/domain"
 )
 
 func TestEnsureConfigFile_And_Load(t *testing.T) {

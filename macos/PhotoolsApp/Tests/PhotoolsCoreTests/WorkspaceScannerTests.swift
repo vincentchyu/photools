@@ -17,16 +17,28 @@ final class WorkspaceScannerTests: XCTestCase {
         try write(root.appendingPathComponent("Inbox/track_wrong.gpx"))
         try write(root.appendingPathComponent("Inbox/notes.txt"))
 
-        try write(root.appendingPathComponent("GPX/track.gpx"))
+        // GPX 轨迹文件：包含合法的 hiking/walking 轨迹，以及待排除的 driving 轨迹和 .bak 文件
+        try write(root.appendingPathComponent("GPX/hiking-中国-广东-白云山-20250322.gpx"))
+        try write(root.appendingPathComponent("GPX/walking-中国-广东-海珠湖-20250501.gpx"))
+        try write(root.appendingPathComponent("GPX/driving-中国-新疆-孟克特古道-20260613.gpx"))
+        try write(root.appendingPathComponent("GPX/hiking-中国-广东-白云山-20250322.gpx.bak"))
         try write(root.appendingPathComponent("GPX/notes.txt"))
+        try write(root.appendingPathComponent("GPX/sub_tracks/hiking-in-sub.gpx"))
         try write(root.appendingPathComponent("Processed/2025/1006/DSC_2025-10-06_1001.NEF"))
         try write(root.appendingPathComponent("Inbox_bak/A001.NEF"))
         try write(root.appendingPathComponent("Logs/inbox_pending_report_latest.md"), text: "# Inbox 待处理清单\n")
 
-        let summary = try WorkspaceScanner().scan(baseDirectory: root.path, rawExtensions: ["nef"])
+        let summary = try WorkspaceScanner().scan(
+            baseDirectory: root.path,
+            gpxDirectory: root.appendingPathComponent("GPX").path,
+            rawExtensions: ["nef"]
+        )
 
-        // GPX 目录下只有 track.gpx 被纳入轨迹列表
-        XCTAssertEqual(summary.gpxFiles.map { URL(fileURLWithPath: $0).lastPathComponent }, ["track.gpx"])
+        // GPX 目录下只有直属的 hiking 与 walking 轨迹被纳入列表（driving、.bak、子目录轨迹均被排除）
+        XCTAssertEqual(summary.gpxFiles.map { URL(fileURLWithPath: $0).lastPathComponent }, [
+            "hiking-中国-广东-白云山-20250322.gpx",
+            "walking-中国-广东-海珠湖-20250501.gpx"
+        ])
         
         // A001 (raw+jpg), B001 (raw), C001 (jpg) 均为主资产，总数为 3
         XCTAssertEqual(summary.assetGroups.count, 3)
@@ -100,6 +112,11 @@ final class WorkspaceScannerTests: XCTestCase {
 
     func testScanMissingDirectoryThrows() throws {
         XCTAssertThrowsError(try WorkspaceScanner().scan(baseDirectory: "/non/existent/photools/path"))
+    }
+
+    func testDefaultGPXDirectory() throws {
+        let defaultGPX = WorkspaceScanner.defaultGPXDirectory
+        XCTAssertTrue(defaultGPX.hasSuffix("/.config/gpx"))
     }
 
     private func makeWorkspace() throws -> URL {

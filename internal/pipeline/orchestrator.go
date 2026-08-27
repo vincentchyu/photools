@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/vincentchyu/photo-processing/internal/domain"
-	"github.com/vincentchyu/photo-processing/internal/engine"
-	"github.com/vincentchyu/photo-processing/internal/exiftool"
+	"github.com/vincentchyu/photools/internal/domain"
+	"github.com/vincentchyu/photools/internal/engine"
+	"github.com/vincentchyu/photools/internal/exiftool"
 )
 
 // Phase 代表由相同 Priority 插件组成的并发执行阶段

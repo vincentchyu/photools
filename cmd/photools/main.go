@@ -15,15 +15,15 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/vincentchyu/photo-processing/internal/completion"
-	"github.com/vincentchyu/photo-processing/internal/config"
-	"github.com/vincentchyu/photo-processing/internal/domain"
-	"github.com/vincentchyu/photo-processing/internal/engine"
-	"github.com/vincentchyu/photo-processing/internal/exiftool"
-	"github.com/vincentchyu/photo-processing/internal/geocoding"
-	"github.com/vincentchyu/photo-processing/internal/geodata"
-	"github.com/vincentchyu/photo-processing/internal/pipeline"
-	"github.com/vincentchyu/photo-processing/internal/tui"
+	"github.com/vincentchyu/photools/internal/completion"
+	"github.com/vincentchyu/photools/internal/config"
+	"github.com/vincentchyu/photools/internal/domain"
+	"github.com/vincentchyu/photools/internal/engine"
+	"github.com/vincentchyu/photools/internal/exiftool"
+	"github.com/vincentchyu/photools/internal/pipeline"
+	"github.com/vincentchyu/photools/internal/tui"
+	"github.com/vincentchyu/photools/pkg/geocoding"
+	"github.com/vincentchyu/photools/pkg/geodata"
 )
 
 func main() {
@@ -144,8 +144,9 @@ func runGeotag(defaultBaseDir string) {
 	sessionCfg := config.NewSessionConfig(pluginsCfg, defaultBaseDir)
 
 	fs := flag.NewFlagSet("geotag", flag.ExitOnError)
-	baseDir := fs.String("base-dir", sessionCfg.Global.BaseDir, "基础目录，包含 Inbox/GPX/Processed/Logs")
+	baseDir := fs.String("base-dir", sessionCfg.Global.BaseDir, "基础目录，包含 Inbox/Processed/Logs")
 	sourceDir := fs.String("source-dir", sessionCfg.Global.SourceDir, "待处理照片源目录 (默认 <base-dir>/Inbox)")
+	gpxDir := fs.String("gpx-dir", sessionCfg.Global.GPXDir, "GPX 轨迹目录 (默认 ~/.config/gpx)")
 	processedDir := fs.String("processed-dir", sessionCfg.Global.TargetDir, "归档目标根目录 (默认 <base-dir>/Processed)")
 	flatMode := fs.Bool("flat", sessionCfg.Global.FlatMode, "扁平原地模式 (直接扫描并就地处理/保存)")
 	inPlace := fs.Bool("in-place", sessionCfg.GetBoolOption(domain.CapDateArchive, "in_place", false), "原地重命名归档，不建立 YYYY/MMDD 子目录")
@@ -167,7 +168,7 @@ func runGeotag(defaultBaseDir string) {
 		win = 15 * time.Minute
 	}
 
-	applySessionOverrides(sessionCfg, *baseDir, *sourceDir, *processedDir, *flatMode, *allowNoGPS, *workers, *rawExts, map[domain.CapabilityID]map[string]any{
+	applySessionOverrides(sessionCfg, *baseDir, *sourceDir, *gpxDir, *processedDir, *flatMode, *allowNoGPS, *workers, *rawExts, map[domain.CapabilityID]map[string]any{
 		domain.CapGPSInterpolate: {"window": *interpolateWindow},
 		domain.CapGPXMatching:    {"geosync": *geosync},
 		domain.CapDateArchive:    {"in_place": *inPlace},
@@ -176,7 +177,7 @@ func runGeotag(defaultBaseDir string) {
 	task, err := pipeline.Build(pipeline.PipelineOptions{
 		BaseDir:           *baseDir,
 		SourceDir:         *sourceDir,
-		GPXDir:            filepath.Join(*baseDir, "GPX"),
+		GPXDir:            *gpxDir,
 		ProcessedDir:      *processedDir,
 		FlatMode:          *flatMode,
 		InPlaceArchive:    *inPlace,
@@ -258,7 +259,7 @@ func runPipeline(defaultBaseDir string) {
 	fs := flag.NewFlagSet("pipeline", flag.ExitOnError)
 	baseDir := fs.String("base-dir", sessionCfg.Global.BaseDir, "基础工作目录")
 	sourceDir := fs.String("source-dir", sessionCfg.Global.SourceDir, "待处理源目录（默认 <base-dir>/Inbox）")
-	gpxDir := fs.String("gpx-dir", filepath.Join(sessionCfg.Global.BaseDir, "GPX"), "GPX 轨迹目录（默认 <base-dir>/GPX）")
+	gpxDir := fs.String("gpx-dir", sessionCfg.Global.GPXDir, "GPX 轨迹目录（默认 ~/.config/gpx）")
 	processedDir := fs.String("processed-dir", sessionCfg.Global.TargetDir, "归档目标根目录（默认 <base-dir>/Processed）")
 	flatMode := fs.Bool("flat", sessionCfg.Global.FlatMode, "扁平原地模式 (忽略 Inbox/Processed 分层，直接扫描并就地处理/保存)")
 	inPlace := fs.Bool("in-place", sessionCfg.GetBoolOption(domain.CapDateArchive, "in_place", false), "原地规范重命名，不建立 YYYY/MMDD 子目录")
@@ -283,7 +284,7 @@ func runPipeline(defaultBaseDir string) {
 		win = 15 * time.Minute
 	}
 
-	applySessionOverrides(sessionCfg, *baseDir, *sourceDir, *processedDir, *flatMode, *allowNoGPS, *workers, *rawExts, map[domain.CapabilityID]map[string]any{
+	applySessionOverrides(sessionCfg, *baseDir, *sourceDir, *gpxDir, *processedDir, *flatMode, *allowNoGPS, *workers, *rawExts, map[domain.CapabilityID]map[string]any{
 		domain.CapGPSInterpolate: {"window": *interpolateWindow},
 		domain.CapGPXMatching:    {"geosync": *geosync},
 		domain.CapDateArchive:    {"in_place": *inPlace},
@@ -501,7 +502,7 @@ func parseExtensions(s string) []string {
 
 func applySessionOverrides(
 	sessionCfg *config.SessionConfig,
-	baseDir, srcDir, procDir string,
+	baseDir, srcDir, gpxDir, procDir string,
 	flat, allowNoGPS bool,
 	workers int,
 	rawExts string,
@@ -509,6 +510,9 @@ func applySessionOverrides(
 ) {
 	sessionCfg.Global.BaseDir = baseDir
 	sessionCfg.Global.SourceDir = srcDir
+	if gpxDir != "" {
+		sessionCfg.Global.GPXDir = gpxDir
+	}
 	sessionCfg.Global.TargetDir = procDir
 	sessionCfg.Global.FlatMode = flat
 	sessionCfg.Global.AllowNoGPS = allowNoGPS
@@ -606,7 +610,7 @@ func runGeoData(args []string) {
 	case "info", "status":
 		rg := geocoding.GetDefault()
 		fmt.Println("🔍 正在扫描并装载本地离线地理库索引...")
-		_ = rg.InitProgressive(context.Background(), func(stage string, percent float64, msg string, status domain.PluginHealthStatus, err error) {
+		_ = rg.InitProgressive(context.Background(), func(stage string, percent float64, msg string, status geocoding.HealthStatus, err error) {
 			if percent >= 0 {
 				fmt.Printf("  • [%s] %s (%.0f%%)\n", stage, msg, percent*100)
 			} else {
@@ -656,7 +660,7 @@ func runGeoDataTestCoordinates(lat, lon, alt float64, debug bool) {
 	rg := geocoding.GetDefault()
 	if !rg.IsInitialized() {
 		fmt.Println("⚙️  检测到首次冷启动，正在装载离线高精地理空间索引...")
-		_ = rg.InitProgressive(context.Background(), func(stage string, percent float64, msg string, status domain.PluginHealthStatus, err error) {
+		_ = rg.InitProgressive(context.Background(), func(stage string, percent float64, msg string, status geocoding.HealthStatus, err error) {
 			if percent >= 0 {
 				fmt.Printf("  • [%s] %s (%.0f%%)\n", stage, msg, percent*100)
 			} else {

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/vincentchyu/photo-processing/internal/geodata"
+	"github.com/vincentchyu/photools/internal/geodata"
 )
 
 func main() {
