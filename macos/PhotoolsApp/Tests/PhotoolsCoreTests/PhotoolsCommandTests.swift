@@ -6,7 +6,7 @@ final class PhotoolsCommandTests: XCTestCase {
         let command = PhotoolsCommand.geotag(
             executablePath: "/repo/photools",
             options: GeotagRunOptions(
-                baseDirectory: "/Users/vincent/Pictures/GPS",
+                baseDirectory: "/workspace/GPS",
                 geosync: "+00:00:05",
                 rawExtensions: "nef,cr3,arw",
                 workers: 4
@@ -16,7 +16,7 @@ final class PhotoolsCommandTests: XCTestCase {
         XCTAssertEqual(command.executablePath, "/repo/photools")
         XCTAssertEqual(command.arguments, [
             "geotag",
-            "-base-dir", "/Users/vincent/Pictures/GPS",
+            "-base-dir", "/workspace/GPS",
             "-geosync", "+00:00:05",
             "-raw-exts", "nef,cr3,arw",
             "-workers", "4"
@@ -25,10 +25,10 @@ final class PhotoolsCommandTests: XCTestCase {
 
     func testPipelineCommandWithFullCapabilities() {
         let options = PipelineRunOptions(
-            baseDirectory: "/Users/vincent/Pictures/GPS",
-            sourceDirectory: "/Users/vincent/Pictures/GPS/Inbox",
-            gpxDirectory: "/Users/vincent/Pictures/GPS/GPX",
-            processedDirectory: "/Users/vincent/Pictures/GPS/Processed",
+            baseDirectory: "/workspace/GPS",
+            sourceDirectory: "/workspace/GPS/Inbox",
+            gpxDirectory: "/workspace/GPS/GPX",
+            processedDirectory: "/workspace/GPS/Processed",
             flatMode: false,
             inPlace: false,
             geosync: "0",
@@ -41,7 +41,7 @@ final class PhotoolsCommandTests: XCTestCase {
             allowNoGPS: true,
             enableArchive: true,
             testBackup: true,
-            backupDirectory: "/Users/vincent/Pictures/GPS/Inbox_bak"
+            backupDirectory: "/workspace/GPS/Inbox_bak"
         )
 
         let command = PhotoolsCommand.pipeline(executablePath: "/repo/photools", options: options)
@@ -49,15 +49,17 @@ final class PhotoolsCommandTests: XCTestCase {
         XCTAssertEqual(command.executablePath, "/repo/photools")
         XCTAssertEqual(command.arguments, [
             "pipeline",
-            "-base-dir", "/Users/vincent/Pictures/GPS",
-            "-source-dir", "/Users/vincent/Pictures/GPS/Inbox",
-            "-gpx-dir", "/Users/vincent/Pictures/GPS/GPX",
-            "-processed-dir", "/Users/vincent/Pictures/GPS/Processed",
+            "-base-dir", "/workspace/GPS",
+            "-source-dir", "/workspace/GPS/Inbox",
+            "-gpx-dir", "/workspace/GPS/GPX",
+            "-processed-dir", "/workspace/GPS/Processed",
             "-geosync", "0",
             "-raw-exts", "nef,dng",
             "-workers", "8",
             "-interpolate-window", "30m",
-            "-backup-dir", "/Users/vincent/Pictures/GPS/Inbox_bak",
+            "-backup-dir", "/workspace/GPS/Inbox_bak",
+            "-sidecar-policy", "smart",
+            "-companion-exts", "wav,acr,exf",
             "-gpx",
             "-interpolate",
             "-geocode",
@@ -69,10 +71,10 @@ final class PhotoolsCommandTests: XCTestCase {
 
     func testPipelineCommandFlatAndInPlace() {
         let options = PipelineRunOptions(
-            baseDirectory: "/Users/vincent/Pictures/Photos2026",
-            sourceDirectory: "/Users/vincent/Pictures/Photos2026",
-            gpxDirectory: "/Users/vincent/Pictures/Photos2026/GPX",
-            processedDirectory: "/Users/vincent/Pictures/Photos2026",
+            baseDirectory: "/workspace/Photos2026",
+            sourceDirectory: "/workspace/Photos2026",
+            gpxDirectory: "/workspace/Photos2026/GPX",
+            processedDirectory: "/workspace/Photos2026",
             flatMode: true,
             inPlace: true,
             geosync: "+00:00:10",
@@ -92,15 +94,17 @@ final class PhotoolsCommandTests: XCTestCase {
 
         XCTAssertEqual(command.arguments, [
             "pipeline",
-            "-base-dir", "/Users/vincent/Pictures/Photos2026",
-            "-source-dir", "/Users/vincent/Pictures/Photos2026",
-            "-gpx-dir", "/Users/vincent/Pictures/Photos2026/GPX",
-            "-processed-dir", "/Users/vincent/Pictures/Photos2026",
+            "-base-dir", "/workspace/Photos2026",
+            "-source-dir", "/workspace/Photos2026",
+            "-gpx-dir", "/workspace/Photos2026/GPX",
+            "-processed-dir", "/workspace/Photos2026",
             "-geosync", "+00:00:10",
             "-raw-exts", "nef",
             "-workers", "4",
             "-interpolate-window", "15m",
             "-flat",
+            "-sidecar-policy", "smart",
+            "-companion-exts", "wav,acr,exf",
             "-in-place",
             "-geocode",
             "-archive"
@@ -110,17 +114,17 @@ final class PhotoolsCommandTests: XCTestCase {
     func testRestoreTestCommand() {
         let command = PhotoolsCommand.restoreTest(
             executablePath: "/repo/photools",
-            baseDirectory: "/Users/vincent/Pictures/GPS",
-            backupDir: "/Users/vincent/Pictures/GPS/Inbox_bak",
-            targetDir: "/Users/vincent/Pictures/GPS/Inbox",
+            baseDirectory: "/workspace/GPS",
+            backupDir: "/workspace/GPS/Inbox_bak",
+            targetDir: "/workspace/GPS/Inbox",
             cleanProcessed: true
         )
 
         XCTAssertEqual(command.arguments, [
             "restore-test",
-            "-base-dir", "/Users/vincent/Pictures/GPS",
-            "-backup-dir", "/Users/vincent/Pictures/GPS/Inbox_bak",
-            "-target-dir", "/Users/vincent/Pictures/GPS/Inbox",
+            "-base-dir", "/workspace/GPS",
+            "-backup-dir", "/workspace/GPS/Inbox_bak",
+            "-target-dir", "/workspace/GPS/Inbox",
             "-clean"
         ])
     }

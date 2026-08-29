@@ -111,15 +111,21 @@ type GeoPoint struct {
 ### 4.1 字典体系架构
 系统通过三层中文字典提供权威规范的地名与区划翻译：
 
-1. **[`admin1CodesASCII_zh.json`](file:///Users/vincent/Pictures/GPS/internal/geodata/data/admin1CodesASCII_zh.json)** (3,865 条)
+1. **[`admin1CodesASCII_zh.json`](../internal/geodata/data/admin1CodesASCII_zh.json)** (3,865 条)
    - 覆盖全球 228 个国家和地区的全部一级行政区（省/州/大区/都道府县/构成国/共和国等）；
    - 保存字段：`code`, `name`, `name_ascii`, `name_zh`, `geoname_id`。
 
-2. **[`admin2Codes_zh.json`](file:///Users/vincent/Pictures/GPS/internal/geodata/data/admin2Codes_zh.json)** (47,592 条)
+2. **[`admin2Codes_zh.json`](../internal/geodata/data/admin2Codes_zh.json)** (47,592 条)
    - 覆盖全球二级行政区（地级市/州/盟/区/县/郡/堂区/自治市镇等）；
    - 深度融合 GB/T 2260 4位国标地级市代码与全球各主要国家二级行政区译名。
 
-3. **[`country_codes.json`](file:///Users/vincent/Pictures/GPS/internal/geodata/data/country_codes.json)** (250+ 条)
+3. **[`iso3166.go`](../pkg/geocoding/iso3166.go)** (全球 ISO 3166-1 双向映射)
+   - GeoNames 数据源原生采用 **ISO 3166-1 Alpha-2**（如 `CN`, `US`, `JP`）；
+   - photools 保持原始 Alpha-2 编码，并在输出派生层按目标元数据规范分流：
+     - **XMP / IPTC Core (`XMP-iptcCore:CountryCode`)**：严格写入 Alpha-2 (`CN`)；
+     - **传统 IPTC IIM (`IPTC:Country-PrimaryLocationCode`)**：自动映射写入 Alpha-3 (`CHN`)，确保 digiKam 与各老旧系统完美兼容。
+
+4. **[`country_codes.json`](../internal/geodata/data/country_codes.json)** (250+ 条)
    - 全球 ISO 2位代码、中文规范国名及所属大洲归属。
 
 ### 4.2 专属国别中文化解析器

@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/vincentchyu/photools/common"
 	"github.com/vincentchyu/photools/internal/capabilities/datearchive"
 	"github.com/vincentchyu/photools/internal/capabilities/gpsinterpolate"
 	"github.com/vincentchyu/photools/internal/capabilities/gpxmatch"
@@ -42,10 +43,13 @@ type PipelineOptions struct {
 	InPlaceArchive    bool          // 归档时原地规范重命名，不建立 Processed/YYYY/MMDD/ 子目录
 
 	// 扁平/直接目录模式与测试备份
-	FlatMode     bool                  // 忽略传统分层目录结构，在指定目录下直接扫描并原地处理/保存
-	EnableBackup bool                  // 是否开启测试备份模式（处理前快照备份原始文件）
-	BackupDir    string                // 自定义测试备份目录（默认 <BaseDir>/Inbox_bak）
-	Session      *config.SessionConfig // 运行时会话配置
+	FlatMode            bool                  // 忽略传统分层目录结构，在指定目录下直接扫描并原地处理/保存
+	SidecarPolicy       string                // 侧车写入策略: read_only, sidecar_only, embed_and_sidecar, embed_only
+	SidecarOnly         bool                  // 仅生成/修改 {file}.xmp 侧车文件 (向后兼容标志)
+	CompanionExtensions []string              // 伴随文件扩展名列表 (如 wav, acr, exf)
+	EnableBackup        bool                  // 是否开启测试备份模式（处理前快照备份原始文件）
+	BackupDir           string                // 自定义测试备份目录（默认 <BaseDir>/Inbox_bak）
+	Session             *config.SessionConfig // 运行时会话配置
 }
 
 // Build 根据启用的插件开关动态构建流水线编排器 Task
@@ -102,12 +106,21 @@ func Build(opts PipelineOptions) (domain.Task, error) {
 
 	logDir := opts.LogDir
 	if logDir == "" {
-		logDir = filepath.Join(baseDir, "Logs")
+		if opts.Session != nil && opts.Session.Global.LogDir != "" {
+			logDir = opts.Session.Global.LogDir
+		} else {
+			logDir = common.GetDefaultLogDir()
+		}
+	}
+	if len(logDir) >= 2 && logDir[:2] == "~/" {
+		if home, err := os.UserHomeDir(); err == nil {
+			logDir = filepath.Join(home, logDir[2:])
+		}
 	}
 	logDir, _ = filepath.Abs(logDir)
 	_ = os.MkdirAll(logDir, 0o755)
 
-	issueFile := filepath.Join(logDir, "inbox_pending_report_latest.md")
+	issueFile := filepath.Join(logDir, common.PendingReportFileNameLatest)
 	lockPath := filepath.Join(logDir, "pipeline.lock")
 
 	runner := opts.Runner
@@ -117,7 +130,7 @@ func Build(opts PipelineOptions) (domain.Task, error) {
 
 	rawExts := opts.RawExtensions
 	if len(rawExts) == 0 {
-		rawExts = []string{"nef", "cr3", "arw", "dng", "raf", "rw2", "orf"}
+		rawExts = common.DefaultRawExtensions
 	}
 
 	workers := opts.Workers
@@ -235,15 +248,36 @@ func Build(opts PipelineOptions) (domain.Task, error) {
 		backupDir, _ = filepath.Abs(backupDir)
 	}
 
+	policyStr := opts.SidecarPolicy
+	if policyStr == "" && session != nil {
+		policyStr = session.Global.SidecarPolicy
+	}
+	if opts.SidecarOnly || (session != nil && session.Global.SidecarOnly) {
+		policyStr = string(domain.PolicySidecarOnly)
+	}
+	policy := domain.NormalizePolicy(policyStr)
+
+	var compExts []string
+	if len(opts.CompanionExtensions) > 0 {
+		compExts = opts.CompanionExtensions
+	} else if session != nil && len(session.Global.CompanionExtensions) > 0 {
+		compExts = session.Global.CompanionExtensions
+	} else {
+		compExts = []string{"wav", "acr", "exf"}
+	}
+
 	return NewOrchestrator(Config{
-		SourceDir:     sourceDir,
-		Capabilities:  activeCaps,
-		RawExtensions: rawExts,
-		Workers:       workers,
-		Runner:        runner,
-		LogDir:        logDir,
-		IssueFile:     issueFile,
-		LockPath:      lockPath,
-		BackupDir:     backupDir,
+		SourceDir:           sourceDir,
+		Capabilities:        activeCaps,
+		RawExtensions:       rawExts,
+		CompanionExtensions: compExts,
+		Workers:             workers,
+		SidecarPolicy:       policy,
+		SidecarOnly:         policy == domain.PolicySidecarOnly,
+		Runner:              runner,
+		LogDir:              logDir,
+		IssueFile:           issueFile,
+		LockPath:            lockPath,
+		BackupDir:           backupDir,
 	})
 }

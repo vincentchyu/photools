@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,6 +96,9 @@ func TestGPSInterpolate_BidirectionalInterpolation(t *testing.T) {
 	if actx2.Longitude < expectedLon-0.0001 || actx2.Longitude > expectedLon+0.0001 {
 		t.Errorf("expected Longitude=%.4f, got %.4f", expectedLon, actx2.Longitude)
 	}
+	if actx2.Provenance == nil || actx2.Provenance.Source != "interpolated" {
+		t.Errorf("expected Provenance.Source='interpolated', got %+v", actx2.Provenance)
+	}
 }
 
 func TestGPSInterpolate_SingleNeighborInheritance(t *testing.T) {
@@ -129,6 +133,42 @@ func TestGPSInterpolate_SingleNeighborInheritance(t *testing.T) {
 
 	if actx2.Latitude != 43.0 || actx2.Longitude != 82.0 {
 		t.Errorf("expected inherited coords (43.0, 82.0), got (%.4f, %.4f)", actx2.Latitude, actx2.Longitude)
+	}
+}
+
+func TestGPSInterpolate_SidecarOnly(t *testing.T) {
+	tempDir := t.TempDir()
+	rawPath1 := filepath.Join(tempDir, "DSC_0001.NEF")
+	rawPath2 := filepath.Join(tempDir, "DSC_0002.NEF")
+
+	_ = os.WriteFile(rawPath1, []byte("raw1"), 0o644)
+	_ = os.WriteFile(rawPath2, []byte("raw2"), 0o644)
+
+	actx1 := domain.NewAssetContext(domain.AssetGroup{BaseName: "DSC_0001", RawPath: rawPath1})
+	actx1.UpdateMetadata(domain.Metadata{DateTimeOriginal: "2026:08:24 10:00:00", GPSPosition: "43.0 N, 82.0 E"})
+	actx1.SetGPS(43.0, 82.0)
+
+	actx2 := domain.NewAssetContext(domain.AssetGroup{BaseName: "DSC_0002", RawPath: rawPath2})
+	actx2.UpdateMetadata(domain.Metadata{DateTimeOriginal: "2026:08:24 10:05:00"})
+	actx2.SidecarOnly = true
+
+	actx2.Batch = []*domain.AssetContext{actx1, actx2}
+
+	runner := &mockRunner{}
+	capInst := NewCapability(Config{
+		Runner:     runner,
+		MaxTimeGap: 10 * time.Minute,
+	})
+
+	err := capInst.ExecuteProcess(context.Background(), actx2, nil)
+	if err != nil {
+		t.Fatalf("ExecuteProcess in SidecarOnly failed: %v", err)
+	}
+
+	for _, mod := range actx2.ModifiedFiles {
+		if !strings.HasSuffix(mod, ".xmp") {
+			t.Errorf("SidecarOnly 模式下不应修改非 XMP 文件: %s", mod)
+		}
 	}
 }
 

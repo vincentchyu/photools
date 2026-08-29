@@ -53,6 +53,14 @@ func (l *LocationInfo) FormatSummary() string {
 	return strings.Join(parts, " · ")
 }
 
+// CountryCodeAlpha3 获取 ISO 3166-1 Alpha-3 三字国家代码 (如 CHN, USA, JPN)
+func (l *LocationInfo) CountryCodeAlpha3() string {
+	if l == nil || l.CountryCode == "" {
+		return ""
+	}
+	return ToAlpha3(l.CountryCode)
+}
+
 // GeoPoint 地理空间点位结构（完整映射 GeoNames 全量可用字段）
 type GeoPoint struct {
 	GeoNameID    int64   `json:"geoname_id,omitempty"`    // 0: geonameid 数据库主键 ID

@@ -1,28 +1,37 @@
 package domain
 
-import "time"
+import (
+	"time"
 
-// EventLevel 定义事件严重级别
-type EventLevel string
-
-const (
-	LevelInfo    EventLevel = "info"
-	LevelSuccess EventLevel = "success"
-	LevelWarn    EventLevel = "warn"
-	LevelError   EventLevel = "error"
+	"github.com/vincentchyu/photools/common"
 )
 
-// PipelineStage 定义当前流水线所处阶段
-type PipelineStage string
+// EventLevel 定义事件严重级别 (指向 common.EventLevel)
+type EventLevel = common.EventLevel
 
 const (
-	StageDiscover PipelineStage = "扫描资产"
-	StagePrecheck PipelineStage = "预检校验"
-	StageGeotag   PipelineStage = "写入GPS"
-	StageGeocode  PipelineStage = "逆地理编码"
-	StageSync     PipelineStage = "同步附属文件"
-	StageArchive  PipelineStage = "归档重命名"
-	StageComplete PipelineStage = "任务完成"
+	LevelInfo    = common.LevelInfo
+	LevelSuccess = common.LevelSuccess
+	LevelWarn    = common.LevelWarn
+	LevelError   = common.LevelError
+)
+
+// PipelineStage 定义当前流水线所处阶段 (指向 common.PipelineStage)
+type PipelineStage = common.PipelineStage
+
+const (
+	StageInit        = common.StageInit
+	StageDiscover    = common.StageDiscover
+	StagePrecheck    = common.StagePrecheck
+	StageGeotag      = common.StageGeotag
+	StageInterpolate = common.StageInterpolate
+	StageGeocode     = common.StageGeocode
+	StageSync        = common.StageSync
+	StageArchive     = common.StageArchive
+	StageBackup      = common.StageBackup
+	StageRestore     = common.StageRestore
+	StageSummary     = common.StageSummary
+	StageComplete    = common.StageComplete
 )
 
 // ProgressEvent 表示在任务执行期间发送给 UI/TUI/日志的结构化事件

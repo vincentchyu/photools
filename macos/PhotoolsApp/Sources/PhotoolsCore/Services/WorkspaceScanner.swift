@@ -98,18 +98,29 @@ public struct WorkspaceScanner: Sendable {
             effectiveGPXDir = (gpxDirectory as NSString).expandingTildeInPath
         }
         let processedDirectory = (baseDirectory as NSString).appendingPathComponent("Processed")
-        let logsDirectory = (baseDirectory as NSString).appendingPathComponent("Logs")
-        let inboxBakDirectory = (baseDirectory as NSString).appendingPathComponent("Inbox_bak")
-        let pendingReportPath = (logsDirectory as NSString).appendingPathComponent("inbox_pending_report_latest.md")
-        
-        // 查找最新的日志文件: 优先 photools_latest.log, 其次 geotag.log
+        let defaultLogDir = ("~/.logs/photools" as NSString).expandingTildeInPath
+        var logsDirectory = defaultLogDir
         var logFilePath = (logsDirectory as NSString).appendingPathComponent("photools_latest.log")
+        var pendingReportPath = (logsDirectory as NSString).appendingPathComponent("inbox_pending_report_latest.md")
+        
+        // 查找最新的日志文件: 优先全局 ~/.logs/photools/photools_latest.log，若无则优雅兼容工作区本地 Logs/
         if !fm.fileExists(atPath: logFilePath) {
-            let legacyLog = (logsDirectory as NSString).appendingPathComponent("geotag.log")
-            if fm.fileExists(atPath: legacyLog) {
-                logFilePath = legacyLog
+            let localLogsDir = (baseDirectory as NSString).appendingPathComponent("Logs")
+            let localLog = (localLogsDir as NSString).appendingPathComponent("photools_latest.log")
+            if fm.fileExists(atPath: localLog) {
+                logsDirectory = localLogsDir
+                logFilePath = localLog
+                pendingReportPath = (localLogsDir as NSString).appendingPathComponent("inbox_pending_report_latest.md")
+            } else {
+                let legacyLog = (localLogsDir as NSString).appendingPathComponent("geotag.log")
+                if fm.fileExists(atPath: legacyLog) {
+                    logsDirectory = localLogsDir
+                    logFilePath = legacyLog
+                    pendingReportPath = (localLogsDir as NSString).appendingPathComponent("inbox_pending_report_latest.md")
+                }
             }
         }
+        let inboxBakDirectory = (baseDirectory as NSString).appendingPathComponent("Inbox_bak")
 
         let assetGroups = scanAssetGroups(inboxDirectory: inboxDirectory, rawExtensions: rawExtensions)
         let gpxFiles = scanGPXFiles(gpxDirectory: effectiveGPXDir)

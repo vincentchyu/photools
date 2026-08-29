@@ -52,10 +52,24 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case processedDirectory
     case performanceSection
     case rawExtensions
+    case companionExtensions
+    case companionExtensionsDesc
     case concurrencyWorkers
     case testBackupMode
 
-    // Settings - Plugins
+    // Settings - Plugins & Policies
+    case sidecarPolicy
+    case sidecarPolicyDesc
+    case policySmart
+    case policySmartDesc
+    case policyReadOnly
+    case policyReadOnlyDesc
+    case policySidecarOnly
+    case policySidecarOnlyDesc
+    case policyEmbedAndSidecar
+    case policyEmbedAndSidecarDesc
+    case policyEmbedOnly
+    case policyEmbedOnlyDesc
     case pluginDefaults
     case pluginGpxMatch
     case pluginInterpolate
@@ -213,6 +227,22 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case allExifTagsTitle
     case filterTagsPlaceholder
     case noMatchingTags
+
+    // Provenance & Metadata Source
+    case provenanceTitle
+    case provenanceSourceLabel
+    case provenanceMethodLabel
+    case provenanceProcessorLabel
+    case provenanceDateLabel
+    case geocodeSourceXMP
+    case geocodeSourceEmbedded
+    case gpsSourceGpx
+    case gpsSourceInterpolated
+    case gpsSourceCamera
+    case methodTimeProximity
+    case methodSphericalLinear
+    case methodNearestNeighbor
+    case sidecarFileLabel
 
     // Asset Types & Status
     case typeRawPairTitle
@@ -378,10 +408,24 @@ public final class LanguageManager: ObservableObject {
         .processedDirectory: "规范归档目录 (默认 Processed)",
         .performanceSection: "性能与格式策略",
         .rawExtensions: "识别的 RAW 扩展名列表 (逗号分隔)",
+        .companionExtensions: "伴随文件扩展名白名单 (逗号或空格分隔)",
+        .companionExtensionsDesc: "与 RAW/JPG 配套归档的伴随格式 (如 wav, acr, exf)",
         .concurrencyWorkers: "并发工作协程数 (Workers)",
         .testBackupMode: "测试快照备份 (执行前自动备份至 Inbox_bak)",
 
-        // Settings Plugins
+        // Settings Plugins & Policies
+        .sidecarPolicy: "元数据写入策略 (Sidecar Policy)",
+        .sidecarPolicyDesc: "决定元数据是直接内嵌写入原始照片文件，还是输出为独立的 .xmp 侧车文件",
+        .policySmart: "智能分层模式 (默认推荐)",
+        .policySmartDesc: "GPS 修正写入 RAW EXIF 头部与 JPG 并同步 XMP 溯源指纹；中文地名/标签严格不碰 RAW，写入 .nef.xmp 侧车与 JPG 内嵌 (最佳生态互通与 RAW 安全)",
+        .policyReadOnly: "智能分层模式 (兼容别名)",
+        .policyReadOnlyDesc: "GPS 修正写入 RAW EXIF 头部与 JPG 并同步 XMP 溯源指纹；中文地名/标签严格不碰 RAW，写入 .nef.xmp 侧车与 JPG 内嵌",
+        .policySidecarOnly: "纯 XMP 侧车模式",
+        .policySidecarOnlyDesc: "RAW 与 JPG 均不触碰原图，所有 GPS 与地名标签严格输出为独立的 .xmp 侧车",
+        .policyEmbedAndSidecar: "原图与 XMP 双写同步",
+        .policyEmbedAndSidecarDesc: "直接修改 RAW/JPG 内嵌 EXIF，同时更新伴随的 .xmp 侧车文件",
+        .policyEmbedOnly: "纯原图内嵌写入",
+        .policyEmbedOnlyDesc: "直接修改 RAW/JPG 内嵌 EXIF，不产生或更新任何 .xmp 侧车文件",
         .pluginDefaults: "核心能力插件默认启用状态",
         .pluginGpxMatch: "GPX 轨迹精准匹配与 GPS 写入",
         .pluginInterpolate: "GPS 智能邻近推断与时间插值",
@@ -540,6 +584,22 @@ public final class LanguageManager: ObservableObject {
         .filterTagsPlaceholder: "过滤标签名或值...",
         .noMatchingTags: "未匹配到标签",
 
+        // Provenance & Metadata Source
+        .provenanceTitle: "元数据溯源与审计指纹",
+        .provenanceSourceLabel: "坐标来源",
+        .provenanceMethodLabel: "推算算法",
+        .provenanceProcessorLabel: "处理引擎",
+        .provenanceDateLabel: "处理时间",
+        .geocodeSourceXMP: "XMP 侧车",
+        .geocodeSourceEmbedded: "原图内嵌",
+        .gpsSourceGpx: "GPX 轨迹精准匹配",
+        .gpsSourceInterpolated: "GPS 智能邻近插值",
+        .gpsSourceCamera: "相机原始自带",
+        .methodTimeProximity: "时间轴邻近匹配",
+        .methodSphericalLinear: "球面大圆时间权重插值",
+        .methodNearestNeighbor: "同机位近邻继承",
+        .sidecarFileLabel: "配套侧车",
+
         // Asset Types & Status
         .typeRawPairTitle: "RAW + JPG 配套",
         .typeRawOnlyTitle: "单 RAW 主文件",
@@ -671,10 +731,24 @@ public final class LanguageManager: ObservableObject {
         .processedDirectory: "Processed Directory (Default Processed)",
         .performanceSection: "Performance & Formats",
         .rawExtensions: "Recognized RAW Extensions (Comma Separated)",
+        .companionExtensions: "Companion Extensions (Comma/Space Separated)",
+        .companionExtensionsDesc: "Companion formats archived with RAW/JPG (e.g. wav, acr, exf)",
         .concurrencyWorkers: "Worker Concurrency",
         .testBackupMode: "Test Snapshot Backup (Auto-backup to Inbox_bak)",
 
-        // Settings Plugins
+        // Settings Plugins & Policies
+        .sidecarPolicy: "Metadata Writing Policy (Sidecar Policy)",
+        .sidecarPolicyDesc: "Determine whether metadata is written into image binary EXIF or outputted as standalone .xmp sidecars",
+        .policySmart: "Smart Tiered Mode (Default Recommended)",
+        .policySmartDesc: "Corrected GPS written to RAW EXIF & JPG with XMP provenance; Location tags strictly written to .xmp & embedded in JPG without touching RAW.",
+        .policyReadOnly: "Smart Tiered Mode (Legacy Alias)",
+        .policyReadOnlyDesc: "Corrected GPS written to RAW EXIF & JPG with XMP provenance; Location tags strictly written to .xmp & embedded in JPG without touching RAW.",
+        .policySidecarOnly: "Sidecar Only Mode",
+        .policySidecarOnlyDesc: "Neither RAW nor JPG is modified; all GPS and reverse geocoded tags are written to standalone .xmp",
+        .policyEmbedAndSidecar: "Embed & Sidecar Dual Sync",
+        .policyEmbedAndSidecarDesc: "Modify image embedded EXIF and create/update companion .xmp sidecars simultaneously",
+        .policyEmbedOnly: "Embed Only",
+        .policyEmbedOnlyDesc: "Directly modify image embedded EXIF without generating .xmp sidecars",
         .pluginDefaults: "Capability Plugin Defaults",
         .pluginGpxMatch: "GPX Track Matching & GPS Tagging",
         .pluginInterpolate: "GPS Intelligent Time-Weighted Interpolation",
@@ -832,6 +906,22 @@ public final class LanguageManager: ObservableObject {
         .allExifTagsTitle: "All ExifTool Tags",
         .filterTagsPlaceholder: "Filter tag names or values...",
         .noMatchingTags: "No matching tags",
+
+        // Provenance & Metadata Source
+        .provenanceTitle: "Metadata Provenance & Audit Fingerprints",
+        .provenanceSourceLabel: "GPS Source",
+        .provenanceMethodLabel: "Algorithm",
+        .provenanceProcessorLabel: "Engine",
+        .provenanceDateLabel: "Processed At",
+        .geocodeSourceXMP: "XMP Sidecar",
+        .geocodeSourceEmbedded: "Image Embedded",
+        .gpsSourceGpx: "GPX Track Matching",
+        .gpsSourceInterpolated: "GPS Time Interpolation",
+        .gpsSourceCamera: "Native Camera GPS",
+        .methodTimeProximity: "Time Proximity Matching",
+        .methodSphericalLinear: "Spherical Great-Circle Time-Weighted Interpolation",
+        .methodNearestNeighbor: "Nearest Neighbor Anchor Inheritance",
+        .sidecarFileLabel: "Sidecar File",
 
         // Asset Types & Status
         .typeRawPairTitle: "RAW + JPG Pair",

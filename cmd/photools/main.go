@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/vincentchyu/photools/common"
 	"github.com/vincentchyu/photools/internal/completion"
 	"github.com/vincentchyu/photools/internal/config"
 	"github.com/vincentchyu/photools/internal/domain"
@@ -26,17 +27,21 @@ import (
 	"github.com/vincentchyu/photools/pkg/geodata"
 )
 
+func exitApp(code int) {
+	exiftool.CloseDefaultPool()
+	os.Exit(code)
+}
+
 func main() {
 	// 确保退出时释放常驻 ExifTool 进程池
 	defer exiftool.CloseDefaultPool()
 
 	// 监听系统退出信号，确保 Ctrl+C 时也能清理子进程
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
 		<-sigCh
-		exiftool.CloseDefaultPool()
-		os.Exit(130)
+		exitApp(130)
 	}()
 
 	// 启动时自动同步并升级 ~/.config/photools/plugins.json 配置
@@ -48,19 +53,19 @@ func main() {
 		if term.IsTerminal(int(os.Stdin.Fd())) {
 			if err := tui.Run(defaultBaseDir); err != nil {
 				fmt.Fprintf(os.Stderr, "运行 TUI 失败: %v\n", err)
-				os.Exit(1)
+				exitApp(1)
 			}
 			return
 		}
 		printUsage()
-		os.Exit(0)
+		exitApp(0)
 	}
 
 	switch os.Args[1] {
 	case "tui":
 		if err := tui.Run(defaultBaseDir); err != nil {
 			fmt.Fprintf(os.Stderr, "运行 TUI 失败: %v\n", err)
-			os.Exit(1)
+			exitApp(1)
 		}
 	case "geotag":
 		runGeotag(defaultBaseDir)
@@ -91,7 +96,7 @@ func main() {
 
 		fmt.Fprintf(os.Stderr, "未知命令: %s\n", os.Args[1])
 		printUsage()
-		os.Exit(1)
+		exitApp(1)
 	}
 }
 
@@ -149,6 +154,9 @@ func runGeotag(defaultBaseDir string) {
 	gpxDir := fs.String("gpx-dir", sessionCfg.Global.GPXDir, "GPX 轨迹目录 (默认 ~/.config/gpx)")
 	processedDir := fs.String("processed-dir", sessionCfg.Global.TargetDir, "归档目标根目录 (默认 <base-dir>/Processed)")
 	flatMode := fs.Bool("flat", sessionCfg.Global.FlatMode, "扁平原地模式 (直接扫描并就地处理/保存)")
+	sidecarPolicy := fs.String("sidecar-policy", sessionCfg.Global.SidecarPolicy, "侧车写入策略: read_only(默认/推荐: 只读RAW写XMP，JPG写内嵌), sidecar_only(纯XMP侧车), embed_and_sidecar(双写同步), embed_only(纯原图内嵌)")
+	sidecarOnly := fs.Bool("sidecar-only", sessionCfg.Global.SidecarOnly, "仅生成/修改 {file}.xmp 侧车文件 (等价于 -sidecar-policy=sidecar_only)")
+	companionExts := fs.String("companion-exts", strings.Join(sessionCfg.Global.CompanionExtensions, ","), "伴随文件扩展名白名单 (如 wav, acr, exf，逗号或空格分隔)")
 	inPlace := fs.Bool("in-place", sessionCfg.GetBoolOption(domain.CapDateArchive, "in_place", false), "原地重命名归档，不建立 YYYY/MMDD 子目录")
 	geosync := fs.String("geosync", sessionCfg.GetStringOption(domain.CapGPXMatching, "geosync", "0"), "传递给 exiftool 的 geosync 偏移值")
 	rawExts := fs.String("raw-exts", strings.Join(sessionCfg.Global.RawExtensions, ","), "可识别的 RAW 扩展名，逗号分隔")
@@ -160,6 +168,7 @@ func runGeotag(defaultBaseDir string) {
 	isTest := fs.Bool("test", sessionCfg.Global.TestBackup, "开启测试备份模式 (处理前自动备份 Inbox 到 Inbox_bak)")
 	isBackup := fs.Bool("backup", false, "同 -test，处理前备份原始文件")
 	backupDir := fs.String("backup-dir", "", "自定义测试备份目录")
+	logDir := fs.String("log-dir", sessionCfg.Global.LogDir, "日志与待补报告目录 (默认 ~/.logs/photools)")
 
 	_ = fs.Parse(normalizeBoolFlags(fs, os.Args[2:]))
 
@@ -168,38 +177,47 @@ func runGeotag(defaultBaseDir string) {
 		win = 15 * time.Minute
 	}
 
-	applySessionOverrides(sessionCfg, *baseDir, *sourceDir, *gpxDir, *processedDir, *flatMode, *allowNoGPS, *workers, *rawExts, map[domain.CapabilityID]map[string]any{
+	finalPolicy := *sidecarPolicy
+	if *sidecarOnly {
+		finalPolicy = string(domain.PolicySidecarOnly)
+	}
+
+	applySessionOverrides(sessionCfg, *baseDir, *sourceDir, *gpxDir, *processedDir, *logDir, *flatMode, finalPolicy, *allowNoGPS, *workers, *rawExts, *companionExts, map[domain.CapabilityID]map[string]any{
 		domain.CapGPSInterpolate: {"window": *interpolateWindow},
 		domain.CapGPXMatching:    {"geosync": *geosync},
 		domain.CapDateArchive:    {"in_place": *inPlace},
 	})
 
 	task, err := pipeline.Build(pipeline.PipelineOptions{
-		BaseDir:           *baseDir,
-		SourceDir:         *sourceDir,
-		GPXDir:            *gpxDir,
-		ProcessedDir:      *processedDir,
-		FlatMode:          *flatMode,
-		InPlaceArchive:    *inPlace,
-		Geosync:           *geosync,
-		RawExtensions:     sessionCfg.Global.RawExtensions,
-		Workers:           *workers,
-		EnableGPXMatch:    true,
-		EnableInterpolate: *enableInterpolate,
-		InterpolateWindow: win,
-		EnableGeocode:     *enableGeocode,
-		AllowNoGPS:        *allowNoGPS,
-		EnableArchive:     true,
-		EnableBackup:      *isTest || *isBackup,
-		BackupDir:         *backupDir,
-		Session:           sessionCfg,
+		BaseDir:             *baseDir,
+		SourceDir:           *sourceDir,
+		GPXDir:              *gpxDir,
+		ProcessedDir:        *processedDir,
+		LogDir:              *logDir,
+		FlatMode:            *flatMode,
+		SidecarPolicy:       finalPolicy,
+		SidecarOnly:         finalPolicy == string(domain.PolicySidecarOnly),
+		CompanionExtensions: sessionCfg.Global.CompanionExtensions,
+		InPlaceArchive:      *inPlace,
+		Geosync:             *geosync,
+		RawExtensions:       sessionCfg.Global.RawExtensions,
+		Workers:             *workers,
+		EnableGPXMatch:      true,
+		EnableInterpolate:   *enableInterpolate,
+		InterpolateWindow:   win,
+		EnableGeocode:       *enableGeocode,
+		AllowNoGPS:          *allowNoGPS,
+		EnableArchive:       true,
+		EnableBackup:        *isTest || *isBackup,
+		BackupDir:           *backupDir,
+		Session:             sessionCfg,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "初始化失败: %v\n", err)
-		os.Exit(1)
+		exitApp(1)
 	}
 
-	runTaskWithEvents(task)
+	runTaskWithEvents(task, *logDir)
 }
 
 func runGeocode(defaultBaseDir string) {
@@ -211,12 +229,16 @@ func runGeocode(defaultBaseDir string) {
 	dir := fs.String("dir", "", "待处理照片目录（默认 <base-dir>/Inbox）")
 	sourceDir := fs.String("source-dir", sessionCfg.Global.SourceDir, "同 -dir")
 	flatMode := fs.Bool("flat", sessionCfg.Global.FlatMode, "扁平模式 (在当前目录下直接处理)")
+	sidecarPolicy := fs.String("sidecar-policy", sessionCfg.Global.SidecarPolicy, "侧车写入策略: smart(默认/推荐: 智能分层模式), sidecar_only(纯XMP侧车), embed_and_sidecar(双写同步), embed_only(纯原图内嵌)")
+	sidecarOnly := fs.Bool("sidecar-only", sessionCfg.Global.SidecarOnly, "仅生成/修改 {file}.xmp 侧车文件 (等价于 -sidecar-policy=sidecar_only)")
+	companionExts := fs.String("companion-exts", strings.Join(sessionCfg.Global.CompanionExtensions, ","), "伴随文件扩展名白名单 (如 wav, acr, exf)")
 	rawExts := fs.String("raw-exts", strings.Join(sessionCfg.Global.RawExtensions, ","), "可识别的 RAW 扩展名，逗号分隔")
 	workers := fs.Int("workers", sessionCfg.Global.Workers, "并发处理数量")
 	allowNoGPS := fs.Bool("allow-no-gps", sessionCfg.Global.AllowNoGPS, "无 GPS 坐标时允许跳过地名写入直接归档")
 	isTest := fs.Bool("test", sessionCfg.Global.TestBackup, "开启测试备份模式 (处理前自动备份到 Inbox_bak)")
 	isBackup := fs.Bool("backup", false, "同 -test，处理前备份原始文件")
 	backupDir := fs.String("backup-dir", "", "自定义测试备份目录")
+	logDir := fs.String("log-dir", sessionCfg.Global.LogDir, "日志与待补报告目录 (默认 ~/.logs/photools)")
 
 	_ = fs.Parse(normalizeBoolFlags(fs, os.Args[2:]))
 
@@ -225,31 +247,46 @@ func runGeocode(defaultBaseDir string) {
 		targetDir = *sourceDir
 	}
 
+	finalPolicy := *sidecarPolicy
+	if *sidecarOnly {
+		finalPolicy = string(domain.PolicySidecarOnly)
+	}
+
 	sessionCfg.Global.BaseDir = *baseDir
 	sessionCfg.Global.SourceDir = targetDir
 	sessionCfg.Global.FlatMode = *flatMode
+	sessionCfg.Global.SidecarPolicy = finalPolicy
+	sessionCfg.Global.SidecarOnly = finalPolicy == string(domain.PolicySidecarOnly)
+	sessionCfg.Global.CompanionExtensions = parseExtensions(*companionExts)
 	sessionCfg.Global.AllowNoGPS = *allowNoGPS
 	sessionCfg.Global.Workers = *workers
 	sessionCfg.Global.RawExtensions = parseExtensions(*rawExts)
+	if *logDir != "" {
+		sessionCfg.Global.LogDir = *logDir
+	}
 
 	task, err := pipeline.Build(pipeline.PipelineOptions{
-		BaseDir:       *baseDir,
-		SourceDir:     targetDir,
-		FlatMode:      *flatMode,
-		EnableGeocode: true,
-		AllowNoGPS:    *allowNoGPS,
-		RawExtensions: sessionCfg.Global.RawExtensions,
-		Workers:       *workers,
-		EnableBackup:  *isTest || *isBackup,
-		BackupDir:     *backupDir,
-		Session:       sessionCfg,
+		BaseDir:             *baseDir,
+		SourceDir:           targetDir,
+		LogDir:              *logDir,
+		FlatMode:            *flatMode,
+		SidecarPolicy:       finalPolicy,
+		SidecarOnly:         finalPolicy == string(domain.PolicySidecarOnly),
+		CompanionExtensions: sessionCfg.Global.CompanionExtensions,
+		EnableGeocode:       true,
+		AllowNoGPS:          *allowNoGPS,
+		RawExtensions:       sessionCfg.Global.RawExtensions,
+		Workers:             *workers,
+		EnableBackup:        *isTest || *isBackup,
+		BackupDir:           *backupDir,
+		Session:             sessionCfg,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "初始化失败: %v\n", err)
-		os.Exit(1)
+		exitApp(1)
 	}
 
-	runTaskWithEvents(task)
+	runTaskWithEvents(task, *logDir)
 }
 
 func runPipeline(defaultBaseDir string) {
@@ -262,6 +299,9 @@ func runPipeline(defaultBaseDir string) {
 	gpxDir := fs.String("gpx-dir", sessionCfg.Global.GPXDir, "GPX 轨迹目录（默认 ~/.config/gpx）")
 	processedDir := fs.String("processed-dir", sessionCfg.Global.TargetDir, "归档目标根目录（默认 <base-dir>/Processed）")
 	flatMode := fs.Bool("flat", sessionCfg.Global.FlatMode, "扁平原地模式 (忽略 Inbox/Processed 分层，直接扫描并就地处理/保存)")
+	sidecarPolicy := fs.String("sidecar-policy", sessionCfg.Global.SidecarPolicy, "侧车写入策略: smart(默认/推荐: 智能分层模式), sidecar_only(纯XMP侧车), embed_and_sidecar(双写同步), embed_only(纯原图内嵌)")
+	sidecarOnly := fs.Bool("sidecar-only", sessionCfg.Global.SidecarOnly, "仅生成/修改 {file}.xmp 侧车文件 (等价于 -sidecar-policy=sidecar_only)")
+	companionExts := fs.String("companion-exts", strings.Join(sessionCfg.Global.CompanionExtensions, ","), "伴随文件扩展名白名单 (如 wav, acr, exf，逗号或空格分隔)")
 	inPlace := fs.Bool("in-place", sessionCfg.GetBoolOption(domain.CapDateArchive, "in_place", false), "原地规范重命名，不建立 YYYY/MMDD 子目录")
 	geosync := fs.String("geosync", sessionCfg.GetStringOption(domain.CapGPXMatching, "geosync", "0"), "传递给 exiftool 的 geosync 偏移值")
 	rawExts := fs.String("raw-exts", strings.Join(sessionCfg.Global.RawExtensions, ","), "可识别的 RAW 扩展名，逗号分隔")
@@ -276,6 +316,7 @@ func runPipeline(defaultBaseDir string) {
 	isTest := fs.Bool("test", sessionCfg.Global.TestBackup, "开启测试备份模式 (处理前自动备份 Inbox 到 Inbox_bak)")
 	isBackup := fs.Bool("backup", false, "同 -test，处理前备份原始文件")
 	backupDir := fs.String("backup-dir", "", "自定义测试备份目录")
+	logDir := fs.String("log-dir", sessionCfg.Global.LogDir, "日志与待补报告目录 (默认 ~/.logs/photools)")
 
 	_ = fs.Parse(normalizeBoolFlags(fs, os.Args[2:]))
 
@@ -284,41 +325,50 @@ func runPipeline(defaultBaseDir string) {
 		win = 15 * time.Minute
 	}
 
-	applySessionOverrides(sessionCfg, *baseDir, *sourceDir, *gpxDir, *processedDir, *flatMode, *allowNoGPS, *workers, *rawExts, map[domain.CapabilityID]map[string]any{
+	finalPolicy := *sidecarPolicy
+	if *sidecarOnly {
+		finalPolicy = string(domain.PolicySidecarOnly)
+	}
+
+	applySessionOverrides(sessionCfg, *baseDir, *sourceDir, *gpxDir, *processedDir, *logDir, *flatMode, finalPolicy, *allowNoGPS, *workers, *rawExts, *companionExts, map[domain.CapabilityID]map[string]any{
 		domain.CapGPSInterpolate: {"window": *interpolateWindow},
 		domain.CapGPXMatching:    {"geosync": *geosync},
 		domain.CapDateArchive:    {"in_place": *inPlace},
 	})
 
 	task, err := pipeline.Build(pipeline.PipelineOptions{
-		BaseDir:           *baseDir,
-		SourceDir:         *sourceDir,
-		GPXDir:            *gpxDir,
-		ProcessedDir:      *processedDir,
-		FlatMode:          *flatMode,
-		InPlaceArchive:    *inPlace,
-		Geosync:           *geosync,
-		RawExtensions:     sessionCfg.Global.RawExtensions,
-		Workers:           *workers,
-		EnableGPXMatch:    *enableGPX,
-		EnableInterpolate: *enableInterpolate,
-		InterpolateWindow: win,
-		EnableGeocode:     *enableGeocode,
-		AllowNoGPS:        *allowNoGPS,
-		EnableArchive:     *enableArchive,
-		EnableBackup:      *isTest || *isBackup,
-		BackupDir:         *backupDir,
-		Session:           sessionCfg,
+		BaseDir:             *baseDir,
+		SourceDir:           *sourceDir,
+		GPXDir:              *gpxDir,
+		ProcessedDir:        *processedDir,
+		LogDir:              *logDir,
+		FlatMode:            *flatMode,
+		SidecarPolicy:       finalPolicy,
+		SidecarOnly:         finalPolicy == string(domain.PolicySidecarOnly),
+		CompanionExtensions: sessionCfg.Global.CompanionExtensions,
+		InPlaceArchive:      *inPlace,
+		Geosync:             *geosync,
+		RawExtensions:       sessionCfg.Global.RawExtensions,
+		Workers:             *workers,
+		EnableGPXMatch:      *enableGPX,
+		EnableInterpolate:   *enableInterpolate,
+		InterpolateWindow:   win,
+		EnableGeocode:       *enableGeocode,
+		AllowNoGPS:          *allowNoGPS,
+		EnableArchive:       *enableArchive,
+		EnableBackup:        *isTest || *isBackup,
+		BackupDir:           *backupDir,
+		Session:             sessionCfg,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "初始化流水线失败: %v\n", err)
-		os.Exit(1)
+		exitApp(1)
 	}
 
-	runTaskWithEvents(task)
+	runTaskWithEvents(task, *logDir)
 }
 
-func runTaskWithEvents(task domain.Task) {
+func runTaskWithEvents(task domain.Task, customLogDir ...string) {
 	eventCh := make(chan domain.ProgressEvent, 100)
 	go func() {
 		for evt := range eventCh {
@@ -335,14 +385,25 @@ func runTaskWithEvents(task domain.Task) {
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "执行任务出错: %v\n", err)
-		os.Exit(1)
+		exitApp(1)
 	}
 
-	fmt.Println("📄 实时中文执行日志流已完整保存在: Logs/photools_latest.log")
+	targetLogDir := common.GetDefaultLogDir()
+	if len(customLogDir) > 0 && customLogDir[0] != "" {
+		targetLogDir = customLogDir[0]
+	}
+	if len(targetLogDir) >= 2 && targetLogDir[:2] == "~/" {
+		if home, err := os.UserHomeDir(); err == nil {
+			targetLogDir = filepath.Join(home, targetLogDir[2:])
+		}
+	}
+	targetLogDir, _ = filepath.Abs(targetLogDir)
+
+	fmt.Printf("📄 实时中文执行日志流已完整保存在: %s\n", filepath.Join(targetLogDir, common.LogFileNameLatest))
 
 	if summary != nil && summary.Failed > 0 {
-		fmt.Fprintf(os.Stderr, "完成时发现 %d 项失败，详情见报告文件 Logs/inbox_pending_report_latest.md\n", len(issues))
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "完成时发现 %d 项失败，详情见报告文件 %s\n", len(issues), filepath.Join(targetLogDir, common.PendingReportFileNameLatest))
+		exitApp(1)
 	}
 }
 
@@ -359,13 +420,14 @@ func runOrganizeByDate() {
 	isTest := fs.Bool("test", sessionCfg.Global.TestBackup, "开启测试备份模式 (处理前自动备份)")
 	isBackup := fs.Bool("backup", false, "同 -test，处理前备份原始文件")
 	backupDir := fs.String("backup-dir", "", "自定义测试备份目录")
+	logDir := fs.String("log-dir", sessionCfg.Global.LogDir, "日志与待补报告目录 (默认 ~/.logs/photools)")
 
 	_ = fs.Parse(normalizeBoolFlags(fs, os.Args[2:]))
 
 	if *sourceDir == "" || *targetDir == "" {
 		fmt.Fprintln(os.Stderr, "错误: 必须指定 -source-dir 和 -target-dir")
 		fmt.Fprintln(os.Stderr, "用法: photools organize-by-date -source-dir <目录> -target-dir <目录> [-test]")
-		os.Exit(1)
+		exitApp(1)
 	}
 
 	sessionCfg.Global.BaseDir = *baseDir
@@ -373,11 +435,15 @@ func runOrganizeByDate() {
 	sessionCfg.Global.TargetDir = *targetDir
 	sessionCfg.Global.Workers = *workers
 	sessionCfg.Global.RawExtensions = parseExtensions(*rawExts)
+	if *logDir != "" {
+		sessionCfg.Global.LogDir = *logDir
+	}
 
 	task, err := pipeline.Build(pipeline.PipelineOptions{
 		BaseDir:       *baseDir,
 		SourceDir:     *sourceDir,
 		ProcessedDir:  *targetDir,
+		LogDir:        *logDir,
 		RawExtensions: sessionCfg.Global.RawExtensions,
 		Workers:       *workers,
 		EnableArchive: true,
@@ -387,10 +453,10 @@ func runOrganizeByDate() {
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "初始化失败: %v\n", err)
-		os.Exit(1)
+		exitApp(1)
 	}
 
-	runTaskWithEvents(task)
+	runTaskWithEvents(task, *logDir)
 }
 
 func runRestoreTest(defaultBaseDir string) {
@@ -415,7 +481,7 @@ func runRestoreTest(defaultBaseDir string) {
 	count, err := engine.RestoreBackup(bDir, tDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ 还原失败: %v\n", err)
-		os.Exit(1)
+		exitApp(1)
 	}
 
 	if *cleanProcessed {
@@ -450,7 +516,7 @@ func runBackup(defaultBaseDir string) {
 	count, err := engine.CreateBackup(sDir, bDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ 备份失败: %v\n", err)
-		os.Exit(1)
+		exitApp(1)
 	}
 
 	fmt.Printf("🎉 快照备份成功！共备份 %d 个照片与伴随文件到 [%s]。\n", count, bDir)
@@ -473,7 +539,7 @@ func runCompletion(args []string) {
 		path, err := completion.InstallShellCompletion()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "安装自动补全脚本失败: %v\n", err)
-			os.Exit(1)
+			exitApp(1)
 		}
 		fmt.Printf("✅ 自动补全脚本已成功安装至: %s\n", path)
 		fmt.Println("💡 请在当前终端运行以下命令或重启终端生效:")
@@ -484,14 +550,17 @@ func runCompletion(args []string) {
 		}
 	default:
 		fmt.Fprintf(os.Stderr, "未知的 Shell 类型: %s (支持 bash, zsh, fish, install)\n", args[0])
-		os.Exit(1)
+		exitApp(1)
 	}
 }
 
 func parseExtensions(s string) []string {
-	parts := strings.Split(s, ",")
+	// 支持逗号与空格切分
+	fields := strings.FieldsFunc(s, func(r rune) bool {
+		return r == ',' || r == ' ' || r == ';'
+	})
 	var res []string
-	for _, p := range parts {
+	for _, p := range fields {
 		c := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(p)), ".")
 		if c != "" {
 			res = append(res, c)
@@ -502,10 +571,13 @@ func parseExtensions(s string) []string {
 
 func applySessionOverrides(
 	sessionCfg *config.SessionConfig,
-	baseDir, srcDir, gpxDir, procDir string,
-	flat, allowNoGPS bool,
+	baseDir, srcDir, gpxDir, procDir, logDir string,
+	flat bool,
+	sidecarPolicy string,
+	allowNoGPS bool,
 	workers int,
 	rawExts string,
+	companionExts string,
 	pluginOpts map[domain.CapabilityID]map[string]interface{},
 ) {
 	sessionCfg.Global.BaseDir = baseDir
@@ -514,10 +586,18 @@ func applySessionOverrides(
 		sessionCfg.Global.GPXDir = gpxDir
 	}
 	sessionCfg.Global.TargetDir = procDir
+	if logDir != "" {
+		sessionCfg.Global.LogDir = logDir
+	}
 	sessionCfg.Global.FlatMode = flat
+	sessionCfg.Global.SidecarPolicy = sidecarPolicy
+	sessionCfg.Global.SidecarOnly = sidecarPolicy == string(domain.PolicySidecarOnly)
 	sessionCfg.Global.AllowNoGPS = allowNoGPS
 	sessionCfg.Global.Workers = workers
 	sessionCfg.Global.RawExtensions = parseExtensions(rawExts)
+	if companionExts != "" {
+		sessionCfg.Global.CompanionExtensions = parseExtensions(companionExts)
+	}
 	for pID, opts := range pluginOpts {
 		for k, v := range opts {
 			sessionCfg.SetPluginOption(pID, k, v)
@@ -564,7 +644,7 @@ func runGeoData(args []string) {
 	mgr, err := geodata.NewManager()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "初始化数据包管理器失败: %v\n", err)
-		os.Exit(1)
+		exitApp(1)
 	}
 
 	if len(args) == 0 {
@@ -586,24 +666,24 @@ func runGeoData(args []string) {
 	case "install", "get", "download":
 		if len(args) < 2 {
 			fmt.Println("❌ 请指定要安装的数据包标识 (如 china, asia, europe, north-america, oceania, all)")
-			os.Exit(1)
+			exitApp(1)
 		}
 		logFn := func(msg string) {
 			fmt.Println(msg)
 		}
 		if err := mgr.Install(context.Background(), args[1], logFn); err != nil {
 			fmt.Fprintf(os.Stderr, "❌ 安装失败: %v\n", err)
-			os.Exit(1)
+			exitApp(1)
 		}
 		geocoding.ResetDefault()
 	case "remove", "rm", "uninstall":
 		if len(args) < 2 {
 			fmt.Println("❌ 请指定要移除的数据包标识 (如 china, asia 等)")
-			os.Exit(1)
+			exitApp(1)
 		}
 		if err := mgr.Remove(args[1]); err != nil {
 			fmt.Fprintf(os.Stderr, "❌ 移除失败: %v\n", err)
-			os.Exit(1)
+			exitApp(1)
 		}
 		geocoding.ResetDefault()
 		fmt.Printf("✅ 已成功移除数据包 [%s]\n", args[1])
@@ -631,18 +711,18 @@ func runGeoData(args []string) {
 	case "test":
 		if len(args) < 3 {
 			fmt.Println("❌ 用法: photools geodata test <纬度> <经度> [海拔高度米] [--debug]")
-			os.Exit(1)
+			exitApp(1)
 		}
 		lat, lon, alt, debug, err := parseCoordinatesWithDebug(args[1:])
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ 经纬度解析失败: %v\n", err)
-			os.Exit(1)
+			exitApp(1)
 		}
 		runGeoDataTestCoordinates(lat, lon, alt, debug)
 	default:
 		fmt.Fprintf(os.Stderr, "未知的 geodata 子命令: %s\n", args[0])
 		printGeoDataHelp()
-		os.Exit(1)
+		exitApp(1)
 	}
 }
 
@@ -739,14 +819,14 @@ func normalizeBoolFlags(fs *flag.FlagSet, args []string) []string {
 func runInspect(args []string) {
 	if len(args) == 0 {
 		fmt.Println("用法: photools inspect <照片路径>")
-		os.Exit(1)
+		exitApp(1)
 	}
 	filePath := args[len(args)-1]
 	meta, err := exiftool.InspectPhotoMetadata(exiftool.DefaultRunner(), filePath)
 	defer exiftool.CloseDefaultPool()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "读取照片元数据失败: %v\n", err)
-		os.Exit(1)
+		exitApp(1)
 	}
 	data, _ := json.MarshalIndent(meta, "", "  ")
 	fmt.Println(string(data))

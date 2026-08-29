@@ -307,14 +307,18 @@ sequenceDiagram
     participant Exif as ExifTool 执行驱动
     participant FS as 物理文件系统
 
-    Orch->>Actx: 初始化 NewAssetContext(RAW+JPG+XMP, Batch)
-    
-    note over Cap,Exif: 1. GPX 轨迹匹配阶段 (P10)
+    note over Cap,Exif: 1. GPX 轨迹匹配与漂移校准阶段 (P10)
     Cap->>Exif: ReadMetadata(RAW)
-    Exif-->>Actx: 缓存 DateTimeOriginal, OffsetTimeOriginal
+    Exif-->>Actx: 缓存 DateTimeOriginal, OffsetTimeOriginal, origGPSPos
+    Cap->>Exif: FilterGPXFilesByDate(日邻近±1天优先 / 同月降级)
     Cap->>Exif: WriteGeotag(RAW, gpxFiles, geosync)
     Cap->>Exif: ReadMetadata(RAW) 二次校验 GPSPosition
-    Cap->>Actx: SetGPS(lat, lon) ➔ 同步 GPS 到 JPG/XMP
+    opt 坐标发生有效变更 (新写入 或 漂移校准 Δ > 1m)
+        Cap->>Actx: SetGPSWithProvenance(lat, lon, prov) ➔ 写入/同步 GPS 到 JPG 与 XMP 侧车
+    end
+    opt 原有 GPS 且与轨迹一致 (未发生坐标漂移)
+        Cap->>Actx: ⏭️ 保持相机原生 GPS，绝不覆写 XMP 与注入 GPX 指纹
+    end
 
     note over Cap,Exif: 2. GPS 智能时间插值推算阶段 (P15)
     opt 未命中 GPX 轨迹但启用了智能推算

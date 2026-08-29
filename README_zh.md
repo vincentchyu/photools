@@ -141,6 +141,54 @@ photools 为 Mac 摄影师提供了基于 SwiftUI 打造的原生桌面应用。
 
 ---
 
+## 🛡️ 智能元数据分层模型与写入策略 (Smart Metadata Tiering)
+
+不同于传统工具“粗暴全部修改 RAW”或“纯外挂侧车导致看图软件无 GPS”的两个极端，**photools** 创新性地提出了 **按元数据性质分层（Metadata Tiering & Intent Model）** 写入架构：
+
+```
+                    摄影元数据 (Metadata)
+                              │
+         ┌────────────────────┼────────────────────┐
+         ↓                    ↓                    ↓
+  第一层: 原始摄影事实   第二层: 修正摄影事实    第三层: 派生地理 & 第四层: 工作流
+   (Original Fact)     (Corrected Fact)       (Derived / Workflow)
+         │                    │                    │
+   相机参数/快门/光圈      GPX匹配GPS/插值GPS       离线逆地理中文地名/POI
+   原始拍摄时间/内建GPS    时区偏差/时间补偿        Lightroom分层关键词树/评分
+         │                    │                    │
+         ↓                    ↓                    ↓
+      RAW 严格保留          RAW EXIF 头部          NEF.XMP 侧车
+                          伴随 JPG 内嵌           伴随 JPG 内嵌
+                          NEF.XMP 同步           (绝不触碰 RAW)
+```
+
+### ⚙️ 四档元数据写入策略 (`--sidecar-policy`)
+
+| 策略名称 | CLI 标识 | 修正事实 (GPS 坐标) | 派生信息 (中文地名/分层标签) | 设计哲学与适用场景 |
+| :--- | :--- | :--- | :--- | :--- |
+| **智能分层模式** *(默认推荐)* | `smart` | **RAW EXIF + JPG 内嵌 + XMP 同步** | **RAW 严格只读写 XMP + JPG 内嵌** | **黄金平衡点**：RAW 获得永久标准 GPS，尼康 NX Studio/相册即开即读；地名由 XMP 承载不污染 RAW；JPG 全平台即开即看。 |
+| **纯 XMP 侧车模式** | `sidecar_only` | 仅输出 `.xmp` 侧车 | 仅输出 `.xmp` 侧车 | 零触碰 RAW 与 JPG 二进制原图，适合严苛归档要求。 |
+| **原图与 XMP 双写同步** | `embed_and_sidecar` | RAW/JPG 双写内嵌 | RAW/JPG 双写内嵌 + 同步 XMP | 全量双重镜像备份。 |
+| **纯原图内嵌模式** | `embed_only` | RAW/JPG 双写内嵌 | RAW/JPG 双写内嵌 (不产生 XMP) | 极简模式，无需管理侧车文件。 |
+
+### 🔍 Photools 专属可追溯性审计指纹 (Provenance)
+当 photools 匹配或算法推算坐标时，自动在 XMP 侧车中注入审计指纹，明确区分“相机原始自带”与“算法推算补全”：
+```xml
+<rdf:Description rdf:about=""
+  xmlns:photools="http://ns.photools.app/1.0/"
+  photools:GPSSource="gpx"
+  photools:GPSMatchMethod="time_proximity"
+  photools:InterpolateWindow="15m"
+  photools:Processor="photools v1.2.0"
+  photools:ProcessedDate="2026-08-29T14:30:00+08:00" />
+```
+
+### 📂 伴随文件扩展名白名单 (`--companion-exts`)
+- 自动拓扑发现与跟踪配套的伴随文件（如 `wav` 录音、`acr` 调色配置、`exf`、`xmp` 等）；
+- 归档重命名时完整保留复合后缀（如 `DSC_2948.nef.xmp` $\rightarrow$ `2026-01-01-DSC_2948.nef.xmp`）。
+
+---
+
 ## 🚀 快速上手 (Quick Start)
 
 ### 方式 A：macOS 原生桌面应用（推荐摄影师使用）
@@ -150,8 +198,14 @@ photools 为 Mac 摄影师提供了基于 SwiftUI 打造的原生桌面应用。
 
 ### 方式 B：CLI 命令行自动化
 ```bash
-# 执行完整自动化流水线 (GPX 匹配 + 地名打标 + 日期归档)
+# 执行完整自动化流水线 (默认启用 Smart 智能分层模式)
 photools pipeline
+
+# 显式指定写入策略 (smart / sidecar_only / embed_and_sidecar / embed_only)
+photools pipeline --sidecar-policy=smart
+
+# 指定伴随文件白名单 (支持同时流转归档录音与调色文件)
+photools pipeline --companion-exts="wav,acr,exf"
 
 # 开启 GPS 智能时间权重插值推算 (例如设置 30 分钟推算窗口)
 photools pipeline --interpolate=true --interpolate-window=30m
@@ -171,7 +225,7 @@ photools tui
 ```
 - **`[1/2/3/4]` 或 `[空格]`**：自由勾选或关闭特定插件；
 - **`[O]`**：打开当前插件的专属自描述配置弹窗（如推算窗口、时间偏移）；
-- **`[S]`**：全局设置弹窗（支持 `[Tab]` 路径智能补全）；
+- **`[S]`**：全局设置弹窗（支持 `[空格]` 循环切换 4 档策略，`[Tab]` 路径智能补全）；
 - **`[Enter]`**：进入 Dry-Run 预检，再次回车即刻执行。
 
 ---
@@ -244,6 +298,7 @@ hdiutil create -volname "photools" -srcfolder dist/photoolsApp.app -ov -format U
 更详尽的架构设计与实现细节，请参阅各专项技术文档：
 
 - 📖 **[系统分阶段调度器与插件化架构设计](docs/ARCHITECTURE_AND_DESIGN.md)**
+- 🏷️ **[ExifTool 元数据写入清单与跨软件兼容性全景规范](docs/EXIFTOOL_METADATA_SPECIFICATION.md)**
 - 🍏 **[macOS 原生客户端与跨语言 C-Shared FFI 设计](docs/MACOS_CLIENT_TECHNICAL_DESIGN.md)**
 - 🛡️ **[ExifTool 常驻守护池与数据安全防污染设计](docs/EXIFTOOL_IO_AND_SAFETY_DESIGN.md)**
 - 🗺️ **[GeoNames 离线数据包与 3D KD-Tree 空间索引设计](docs/GEONAMES_AND_GEOCODING_DESIGN.md)**

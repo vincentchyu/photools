@@ -116,14 +116,17 @@ type Model struct {
 	geoStats geocoding.GeocoderLoadStats
 
 	// 全局设置表单字段 (stateGlobalSettings)
-	globalFocusIdx int
-	baseDirInput   textinput.Model
-	sourceDirInput textinput.Model
-	rawExtsInput   textinput.Model
-	workersInput   textinput.Model
-	flatMode       bool
-	allowNoGPS     bool
-	testBackup     bool
+	globalFocusIdx     int
+	baseDirInput       textinput.Model
+	sourceDirInput     textinput.Model
+	rawExtsInput       textinput.Model
+	companionExtsInput textinput.Model
+	workersInput       textinput.Model
+	flatMode           bool
+	sidecarPolicy      domain.SidecarPolicy
+	sidecarOnly        bool
+	allowNoGPS         bool
+	testBackup         bool
 
 	// 子插件专属设置表单字段 (statePluginSettings)
 	pluginFocusIdx     int
@@ -217,6 +220,10 @@ func InitialModel(defaultBaseDir string) Model {
 	rawExtsInput.SetValue(strings.Join(sessionCfg.Global.RawExtensions, ","))
 	rawExtsInput.Placeholder = "逗号分隔扩展名"
 
+	compExtsInput := textinput.New()
+	compExtsInput.SetValue(strings.Join(sessionCfg.Global.CompanionExtensions, ","))
+	compExtsInput.Placeholder = "逗号/空格分隔伴随扩展名 (如 wav, acr, exf)"
+
 	workersInput := textinput.New()
 	workersInput.SetValue(strconv.Itoa(sessionCfg.Global.Workers))
 	workersInput.Placeholder = "并发协程数"
@@ -287,7 +294,11 @@ func InitialModel(defaultBaseDir string) Model {
 		enableGPXMatch:    true,
 		enableInterpolate: false,
 		enableGeocode:     true,
-		allowNoGPS:        false,
+		allowNoGPS:        sessionCfg.Global.AllowNoGPS,
+		sidecarPolicy:     domain.NormalizePolicy(sessionCfg.Global.SidecarPolicy),
+		sidecarOnly:       domain.NormalizePolicy(sessionCfg.Global.SidecarPolicy) == domain.PolicySidecarOnly,
+		flatMode:          sessionCfg.Global.FlatMode,
+		testBackup:        sessionCfg.Global.TestBackup,
 		enableArchive:     true,
 		pluginIndex:       0,
 		pluginItems: []pluginItem{
@@ -321,6 +332,7 @@ func InitialModel(defaultBaseDir string) Model {
 		baseDirInput:       baseInput,
 		sourceDirInput:     srcInput,
 		rawExtsInput:       rawExtsInput,
+		companionExtsInput: compExtsInput,
 		workersInput:       workersInput,
 		pluginSettingInput: pluginSettingInput,
 		geosyncInput:       geosyncInput,
@@ -604,7 +616,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = stateMenu
 				m.tabCandidates = nil
 			case "tab":
-				if m.globalFocusIdx == 0 || m.globalFocusIdx == 2 {
+				if m.globalFocusIdx == 0 || m.globalFocusIdx == 4 {
 					m.handlePathTab(m.globalFocusIdx)
 				} else {
 					m.nextGlobalFocus()
@@ -624,9 +636,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					} else {
 						m.sourceDirInput.SetValue(filepath.Join(m.baseDirInput.Value(), "Inbox"))
 					}
-				case 3:
-					m.allowNoGPS = !m.allowNoGPS
+				case 2:
+					switch m.sidecarPolicy {
+					case domain.PolicySmart, domain.PolicyReadOnly:
+						m.sidecarPolicy = domain.PolicySidecarOnly
+					case domain.PolicySidecarOnly:
+						m.sidecarPolicy = domain.PolicyEmbedAndSidecar
+					case domain.PolicyEmbedAndSidecar:
+						m.sidecarPolicy = domain.PolicyEmbedOnly
+					case domain.PolicyEmbedOnly:
+						m.sidecarPolicy = domain.PolicySmart
+					default:
+						m.sidecarPolicy = domain.PolicySmart
+					}
+					m.sidecarOnly = (m.sidecarPolicy == domain.PolicySidecarOnly)
 				case 5:
+					m.allowNoGPS = !m.allowNoGPS
+				case 7:
 					m.testBackup = !m.testBackup
 				}
 			case "enter":
@@ -827,6 +853,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) updateGlobalFocus() {
 	m.baseDirInput.Blur()
+	m.companionExtsInput.Blur()
 	m.sourceDirInput.Blur()
 	m.rawExtsInput.Blur()
 	m.workersInput.Blur()
@@ -834,22 +861,24 @@ func (m *Model) updateGlobalFocus() {
 	switch m.globalFocusIdx {
 	case 0:
 		m.baseDirInput.Focus()
-	case 2:
-		m.sourceDirInput.Focus()
+	case 3:
+		m.companionExtsInput.Focus()
 	case 4:
-		m.rawExtsInput.Focus()
+		m.sourceDirInput.Focus()
 	case 6:
+		m.rawExtsInput.Focus()
+	case 8:
 		m.workersInput.Focus()
 	}
 }
 
 func (m *Model) nextGlobalFocus() {
-	m.globalFocusIdx = (m.globalFocusIdx + 1) % 7
+	m.globalFocusIdx = (m.globalFocusIdx + 1) % 9
 	m.updateGlobalFocus()
 }
 
 func (m *Model) prevGlobalFocus() {
-	m.globalFocusIdx = (m.globalFocusIdx + 6) % 7
+	m.globalFocusIdx = (m.globalFocusIdx + 8) % 9
 	m.updateGlobalFocus()
 }
 
@@ -857,11 +886,13 @@ func (m *Model) handleGlobalInput(msg tea.Msg) {
 	switch m.globalFocusIdx {
 	case 0:
 		m.baseDirInput, _ = m.baseDirInput.Update(msg)
-	case 2:
-		m.sourceDirInput, _ = m.sourceDirInput.Update(msg)
+	case 3:
+		m.companionExtsInput, _ = m.companionExtsInput.Update(msg)
 	case 4:
-		m.rawExtsInput, _ = m.rawExtsInput.Update(msg)
+		m.sourceDirInput, _ = m.sourceDirInput.Update(msg)
 	case 6:
+		m.rawExtsInput, _ = m.rawExtsInput.Update(msg)
+	case 8:
 		m.workersInput, _ = m.workersInput.Update(msg)
 	}
 }
@@ -871,7 +902,7 @@ func (m *Model) handlePathTab(focusIdx int) {
 	switch focusIdx {
 	case 0:
 		targetInput = &m.baseDirInput
-	case 2:
+	case 4:
 		targetInput = &m.sourceDirInput
 	default:
 		return
@@ -966,6 +997,7 @@ func (m *Model) saveGlobalSettings(persist bool) {
 	}
 
 	m.sessionConfig.Global.FlatMode = m.flatMode
+	m.sessionConfig.Global.SidecarOnly = m.sidecarOnly
 	m.sessionConfig.Global.AllowNoGPS = m.allowNoGPS
 	m.sessionConfig.Global.TestBackup = m.testBackup
 
@@ -1612,7 +1644,7 @@ func (m Model) viewGlobalSettings() string {
 	if m.globalFocusIdx == 0 {
 		prefix0 = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Render("▶ ")
 	}
-	b.WriteString(fmt.Sprintf("%s%s 工作区根目录 (BaseDir / 按 [Tab] 自动补全路径)：\n", prefix0, StatusLabel.Render("[1/7]")))
+	b.WriteString(fmt.Sprintf("%s%s 工作区根目录 (BaseDir / 按 [Tab] 自动补全路径)：\n", prefix0, StatusLabel.Render("[1/9]")))
 	b.WriteString(m.baseDirInput.View() + "\n")
 	if m.globalFocusIdx == 0 && len(m.tabCandidates) > 0 {
 		var badges []string
@@ -1642,16 +1674,45 @@ func (m Model) viewGlobalSettings() string {
 		flatCheck = lipgloss.NewStyle().Foreground(SuccessColor).Bold(true).Render("[✔]")
 	}
 	b.WriteString(fmt.Sprintf("%s%s %s 扁平原地模式 (Flat Mode / 忽略 Inbox/Processed 结构，直接扫描并就地处理保存)\n\n",
-		prefix1, StatusLabel.Render("[2/7]"), flatCheck))
+		prefix1, StatusLabel.Render("[2/9]"), flatCheck))
 
-	// 3. SourceDir
+	// 3. Sidecar Policy (4 档轮转切换)
 	prefix2 := "  "
 	if m.globalFocusIdx == 2 {
 		prefix2 = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Render("▶ ")
 	}
-	b.WriteString(fmt.Sprintf("%s%s 扫描源目录 (SourceDir / 按 [Tab] 自动补全路径)：\n", prefix2, StatusLabel.Render("[3/7]")))
+	var policyBadge string
+	switch m.sidecarPolicy {
+	case domain.PolicySmart, domain.PolicyReadOnly:
+		policyBadge = BadgeSuccess.Render(" 🛡️ 智能分层模式 (GPS修正写RAW/地名写XMP/JPG全嵌 · 默认推荐) ")
+	case domain.PolicySidecarOnly:
+		policyBadge = BadgeInfo.Render(" 📝 纯XMP侧车模式 (不修改任何原图) ")
+	case domain.PolicyEmbedAndSidecar:
+		policyBadge = BadgeWarning.Render(" 🔄 原图与XMP双写同步 ")
+	case domain.PolicyEmbedOnly:
+		policyBadge = lipgloss.NewStyle().Background(PrimaryColor).Foreground(lipgloss.Color("#FFFFFF")).Render(" 📷 纯原图内嵌写入 (不产生XMP) ")
+	default:
+		policyBadge = BadgeSuccess.Render(" 🛡️ 智能分层模式 (GPS修正写RAW/地名写XMP/JPG全嵌 · 默认推荐) ")
+	}
+	b.WriteString(fmt.Sprintf("%s%s 元数据写入策略 (Sidecar Policy / 按 [空格] 循环切换)：\n   %s\n\n",
+		prefix2, StatusLabel.Render("[3/9]"), policyBadge))
+
+	// 4. Companion Extensions
+	prefix3 := "  "
+	if m.globalFocusIdx == 3 {
+		prefix3 = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Render("▶ ")
+	}
+	b.WriteString(fmt.Sprintf("%s%s 伴随文件扩展名白名单 (Companion Extensions / 逗号或空格分隔)：\n", prefix3, StatusLabel.Render("[4/9]")))
+	b.WriteString(m.companionExtsInput.View() + "\n\n")
+
+	// 5. SourceDir
+	prefix4 := "  "
+	if m.globalFocusIdx == 4 {
+		prefix4 = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Render("▶ ")
+	}
+	b.WriteString(fmt.Sprintf("%s%s 扫描源目录 (SourceDir / 按 [Tab] 自动补全路径)：\n", prefix4, StatusLabel.Render("[5/9]")))
 	b.WriteString(m.sourceDirInput.View() + "\n")
-	if m.globalFocusIdx == 2 && len(m.tabCandidates) > 0 {
+	if m.globalFocusIdx == 4 && len(m.tabCandidates) > 0 {
 		var badges []string
 		for i, c := range m.tabCandidates {
 			if i < 4 {
@@ -1669,47 +1730,47 @@ func (m Model) viewGlobalSettings() string {
 	}
 	b.WriteString("\n")
 
-	// 4. AllowNoGPS
-	prefix3 := "  "
-	if m.globalFocusIdx == 3 {
-		prefix3 = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Render("▶ ")
+	// 6. AllowNoGPS
+	prefix5 := "  "
+	if m.globalFocusIdx == 5 {
+		prefix5 = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Render("▶ ")
 	}
 	gpsCheck := "[ ]"
 	if m.allowNoGPS {
 		gpsCheck = lipgloss.NewStyle().Foreground(SuccessColor).Bold(true).Render("[✔]")
 	}
 	b.WriteString(fmt.Sprintf("%s%s %s 无 GPS 软降级容错 (允许无 GPS 照片跳过地名写入直接归档)\n\n",
-		prefix3, StatusLabel.Render("[4/7]"), gpsCheck))
+		prefix5, StatusLabel.Render("[6/9]"), gpsCheck))
 
-	// 5. RawExts
-	prefix4 := "  "
-	if m.globalFocusIdx == 4 {
-		prefix4 = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Render("▶ ")
+	// 7. RawExts
+	prefix6 := "  "
+	if m.globalFocusIdx == 6 {
+		prefix6 = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Render("▶ ")
 	}
-	b.WriteString(fmt.Sprintf("%s%s RAW 格式识别白名单：\n", prefix4, StatusLabel.Render("[5/7]")))
+	b.WriteString(fmt.Sprintf("%s%s RAW 格式识别白名单：\n", prefix6, StatusLabel.Render("[7/9]")))
 	b.WriteString(m.rawExtsInput.View() + "\n\n")
 
-	// 6. TestBackup
-	prefix5 := "  "
-	if m.globalFocusIdx == 5 {
-		prefix5 = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Render("▶ ")
+	// 8. TestBackup
+	prefix7 := "  "
+	if m.globalFocusIdx == 7 {
+		prefix7 = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Render("▶ ")
 	}
 	bakCheck := "[ ]"
 	if m.testBackup {
 		bakCheck = lipgloss.NewStyle().Foreground(SuccessColor).Bold(true).Render("[✔]")
 	}
 	b.WriteString(fmt.Sprintf("%s%s %s 测试安全快照备份 (执行前全量备份至 Inbox_bak)\n\n",
-		prefix5, StatusLabel.Render("[6/7]"), bakCheck))
+		prefix7, StatusLabel.Render("[8/9]"), bakCheck))
 
-	// 7. Workers
-	prefix6 := "  "
-	if m.globalFocusIdx == 6 {
-		prefix6 = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Render("▶ ")
+	// 9. Workers
+	prefix8 := "  "
+	if m.globalFocusIdx == 8 {
+		prefix8 = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Render("▶ ")
 	}
-	b.WriteString(fmt.Sprintf("%s%s 并发处理 Worker 协程数：\n", prefix6, StatusLabel.Render("[7/7]")))
+	b.WriteString(fmt.Sprintf("%s%s 并发处理 Worker 协程数：\n", prefix8, StatusLabel.Render("[9/9]")))
 	b.WriteString(m.workersInput.View() + "\n\n")
 
-	b.WriteString(lipgloss.NewStyle().Foreground(MutedTextColor).Render("快捷操作：按 [Tab] 补全路径/切换，按 [↑/↓] 切换输入项，按 [空格] 切换开关，按 [Enter] 应用会话，按 [Ctrl+S] 永久保存，按 [Esc] 取消返回"))
+	b.WriteString(lipgloss.NewStyle().Foreground(MutedTextColor).Render("快捷操作：按 [Tab] 补全路径/切换，按 [↑/↓] 切换输入项，按 [空格] 切换选项/开关，按 [Enter] 应用会话，按 [Ctrl+S] 永久保存，按 [Esc] 取消返回"))
 	return PanelStyle.Render(b.String())
 }
 
@@ -2038,7 +2099,7 @@ func (m Model) viewSummary() string {
 		b.WriteString(
 			lipgloss.NewStyle().Bold(true).Foreground(WarningColor).Render(
 				fmt.Sprintf(
-					"⚠️ 发现 %d 项待处理/异常资产 (已生成详细报告 Logs/inbox_pending_report_latest.md)：",
+					"⚠️ 发现 %d 项待处理/异常资产 (已生成详细报告 ~/.logs/photools/inbox_pending_report_latest.md)：",
 					len(m.taskIssues),
 				),
 			) + "\n",
@@ -2056,7 +2117,7 @@ func (m Model) viewSummary() string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(lipgloss.NewStyle().Foreground(HighlightColor).Render("📄 实时中文执行日志流已完整保存在: Logs/photools_latest.log") + "\n\n")
+	b.WriteString(lipgloss.NewStyle().Foreground(HighlightColor).Render("📄 实时中文执行日志流已完整保存在: ~/.logs/photools/photools_latest.log") + "\n\n")
 
 	b.WriteString(lipgloss.NewStyle().Foreground(MutedTextColor).Render("操作指引：按 [Enter] 或 [Esc] 返回主菜单，按 [q] 退出程序"))
 	return PanelStyle.Render(b.String())

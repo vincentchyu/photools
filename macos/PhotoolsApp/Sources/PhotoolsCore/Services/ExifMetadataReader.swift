@@ -23,7 +23,23 @@ public final class ExifMetadataReader: Sendable {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: exiftoolPath)
-        process.arguments = ["-m", "-q", "-j", "-G1", "-a", "-s", "-c", "%.6f", filePath]
+
+        var args = ["-m", "-q", "-j", "-G1", "-a", "-s", "-c", "%.6f", filePath]
+        let sidecarCandidates = [
+            filePath + ".xmp",
+            filePath + ".XMP",
+            (filePath as NSString).deletingPathExtension + ".xmp",
+            (filePath as NSString).deletingPathExtension + ".XMP"
+        ]
+        var foundSidecar: String?
+        for cand in sidecarCandidates {
+            if FileManager.default.fileExists(atPath: cand) && cand != filePath {
+                foundSidecar = cand
+                args.append(cand)
+                break
+            }
+        }
+        process.arguments = args
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()
@@ -45,7 +61,21 @@ public final class ExifMetadataReader: Sendable {
             return fallbackMetadata(for: filePath)
         }
 
-        return ExifMetadata.parse(from: firstItem, fallbackPath: filePath)
+        var merged = firstItem
+        if jsonArray.count > 1 {
+            let xmpDict = jsonArray[1]
+            for (k, v) in xmpDict {
+                if merged[k] == nil {
+                    merged[k] = v
+                }
+            }
+            if let sidecar = foundSidecar {
+                merged["sidecar_path"] = sidecar
+                merged["geocode_source"] = "xmp"
+            }
+        }
+
+        return ExifMetadata.parse(from: merged, fallbackPath: filePath)
     }
 
     private func findExifToolPath() -> String? {

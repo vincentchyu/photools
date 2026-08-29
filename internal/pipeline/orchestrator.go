@@ -25,32 +25,38 @@ type Phase struct {
 
 // Config 封装流水线编排器初始化参数
 type Config struct {
-	Name          string
-	Description   string
-	SourceDir     string
-	Capabilities  []domain.Capability
-	RawExtensions []string
-	Workers       int
-	Runner        exiftool.CommandRunner
-	LogDir        string
-	IssueFile     string
-	LockPath      string
-	BackupDir     string
+	Name                string
+	Description         string
+	SourceDir           string
+	Capabilities        []domain.Capability
+	RawExtensions       []string
+	CompanionExtensions []string
+	Workers             int
+	SidecarPolicy       domain.SidecarPolicy
+	SidecarOnly         bool
+	Runner              exiftool.CommandRunner
+	LogDir              string
+	IssueFile           string
+	LockPath            string
+	BackupDir           string
 }
 
 // Orchestrator 负责将多个独立能力插件按优先级分阶段调度执行（实现 domain.Task 接口）
 type Orchestrator struct {
-	name         string
-	description  string
-	sourceDir    string
-	capabilities []domain.Capability
-	phases       []Phase
-	workers      int
-	runner       exiftool.CommandRunner
-	logDir       string
-	issueFile    string
-	lockPath     string
-	backupDir    string
+	name                string
+	description         string
+	sourceDir           string
+	capabilities        []domain.Capability
+	phases              []Phase
+	workers             int
+	sidecarPolicy       domain.SidecarPolicy
+	sidecarOnly         bool
+	companionExtensions []string
+	runner              exiftool.CommandRunner
+	logDir              string
+	issueFile           string
+	lockPath            string
+	backupDir           string
 
 	discoverer *engine.Discoverer
 	reporter   *engine.Reporter
@@ -117,20 +123,32 @@ func NewOrchestrator(cfg Config) (*Orchestrator, error) {
 		desc = "按插件 Priority 从高到低分阶段串行流转，同阶段内安全并发处理"
 	}
 
+	policy := cfg.SidecarPolicy
+	if policy == "" {
+		if cfg.SidecarOnly {
+			policy = domain.PolicySidecarOnly
+		} else {
+			policy = domain.PolicyReadOnly
+		}
+	}
+
 	return &Orchestrator{
-		name:         name,
-		description:  desc,
-		sourceDir:    sourceDir,
-		capabilities: cfg.Capabilities,
-		phases:       phases,
-		workers:      cfg.Workers,
-		runner:       runner,
-		logDir:       cfg.LogDir,
-		issueFile:    cfg.IssueFile,
-		lockPath:     cfg.LockPath,
-		backupDir:    cfg.BackupDir,
-		discoverer:   engine.NewDiscoverer(cfg.RawExtensions),
-		reporter:     engine.NewReporter(),
+		name:                name,
+		description:         desc,
+		sourceDir:           sourceDir,
+		capabilities:        cfg.Capabilities,
+		phases:              phases,
+		workers:             cfg.Workers,
+		sidecarPolicy:       policy,
+		sidecarOnly:         policy == domain.PolicySidecarOnly,
+		companionExtensions: cfg.CompanionExtensions,
+		runner:              runner,
+		logDir:              cfg.LogDir,
+		issueFile:           cfg.IssueFile,
+		lockPath:            cfg.LockPath,
+		backupDir:           cfg.BackupDir,
+		discoverer:          engine.NewDiscoverer(cfg.RawExtensions, cfg.CompanionExtensions),
+		reporter:            engine.NewReporter(),
 	}, nil
 }
 
@@ -225,7 +243,10 @@ func (o *Orchestrator) PlanWithProgress(ctx context.Context, eventCh chan<- doma
 
 	allAssetContexts := make([]*domain.AssetContext, len(allGroups))
 	for i, group := range allGroups {
-		allAssetContexts[i] = domain.NewAssetContext(group)
+		actx := domain.NewAssetContext(group)
+		actx.SidecarPolicy = o.sidecarPolicy
+		actx.SidecarOnly = o.sidecarOnly
+		allAssetContexts[i] = actx
 	}
 	for _, actx := range allAssetContexts {
 		actx.Batch = allAssetContexts
@@ -545,7 +566,10 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 
 	allAssetContexts := make([]*domain.AssetContext, len(allGroups))
 	for i, g := range allGroups {
-		allAssetContexts[i] = domain.NewAssetContext(g)
+		actx := domain.NewAssetContext(g)
+		actx.SidecarPolicy = o.sidecarPolicy
+		actx.SidecarOnly = o.sidecarOnly
+		allAssetContexts[i] = actx
 	}
 	for _, actx := range allAssetContexts {
 		actx.Batch = allAssetContexts
@@ -611,6 +635,9 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 				return struct{}{}
 			}
 
+			executedCount := 0
+			var skippedDescs []string
+
 			// 在当前 Phase 内部执行该 Priority 包含的所有 Capabilities
 			for _, capInst := range ph.Capabilities {
 				// 1. 预检
@@ -618,6 +645,11 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 				if !plan.CanProcess {
 					// 若 Warning 为空，说明属于良性跳过（如已有 GPS 坐标无需插值，或开启了无 GPS 降级允许跳过地名写入）
 					if plan.Warning == "" {
+						desc := plan.ActionDesc
+						if desc == "" {
+							desc = "已满足条件，无需重复处理"
+						}
+						skippedDescs = append(skippedDescs, desc)
 						continue
 					}
 
@@ -696,17 +728,30 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 					})
 					return struct{}{}
 				}
+
+				executedCount++
 			}
 
 			idx := int(phaseProcessed.Add(1))
-			sendEvent(domain.ProgressEvent{
-				Stage:        ph.Capabilities[len(ph.Capabilities)-1].RequiredStage(),
-				Level:        domain.LevelSuccess,
-				Message:      fmt.Sprintf("[%s] 完成: %s", phaseTitle, st.actx.Asset.DisplayName()),
-				Asset:        &st.actx.Asset,
-				CurrentIndex: idx,
-				TotalItems:   totalAssets,
-			})
+			if executedCount > 0 {
+				sendEvent(domain.ProgressEvent{
+					Stage:        ph.Capabilities[len(ph.Capabilities)-1].RequiredStage(),
+					Level:        domain.LevelSuccess,
+					Message:      fmt.Sprintf("[%s] 完成: %s", phaseTitle, st.actx.Asset.DisplayName()),
+					Asset:        &st.actx.Asset,
+					CurrentIndex: idx,
+					TotalItems:   totalAssets,
+				})
+			} else if len(skippedDescs) > 0 {
+				sendEvent(domain.ProgressEvent{
+					Stage:        ph.Capabilities[len(ph.Capabilities)-1].RequiredStage(),
+					Level:        domain.LevelInfo,
+					Message:      fmt.Sprintf("[%s] ⏭️ 跳过: %s (%s)", phaseTitle, st.actx.Asset.DisplayName(), strings.Join(skippedDescs, "; ")),
+					Asset:        &st.actx.Asset,
+					CurrentIndex: idx,
+					TotalItems:   totalAssets,
+				})
+			}
 			return struct{}{}
 		})
 

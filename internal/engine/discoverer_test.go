@@ -85,6 +85,46 @@ func TestDiscoverer_DiscoverAssets(t *testing.T) {
 	}
 }
 
+func TestDiscoverer_CompoundXMP(t *testing.T) {
+	tempDir := t.TempDir()
+
+	files := []string{
+		"DSC_2948.nef",
+		"DSC_2948.JPG",
+		"DSC_2948.nef.xmp",
+		"DSC_2948.JPG.xmp",
+	}
+
+	for _, f := range files {
+		fullPath := filepath.Join(tempDir, f)
+		_ = os.WriteFile(fullPath, []byte("data"), 0o644)
+	}
+
+	d := NewDiscoverer([]string{"nef"})
+	groups, err := d.Discover(tempDir)
+	if err != nil {
+		t.Fatalf("Discover 失败: %v", err)
+	}
+
+	if len(groups) != 1 {
+		t.Fatalf("期望聚合为 1 个资产组，实际发现 %d 个: %+v", len(groups), groups)
+	}
+
+	g := groups[0]
+	if g.BaseName != "DSC_2948" {
+		t.Errorf("期望 BaseName 为 DSC_2948，实际为 %s", g.BaseName)
+	}
+	if g.RawPath == "" || g.JPGPath == "" {
+		t.Errorf("期望同时识别 RAW 与 JPG: %+v", g)
+	}
+	if !strings.HasSuffix(g.XMPPath, ".nef.xmp") {
+		t.Errorf("期望 XMPPath 指向 .nef.xmp，实际为 %s", g.XMPPath)
+	}
+	if len(g.CompanionPaths) != 2 {
+		t.Errorf("期望 CompanionPaths 包含两个 xmp 文件，实际为 %d: %+v", len(g.CompanionPaths), g.CompanionPaths)
+	}
+}
+
 func TestDiscoverer_ShieldsBackupAndSystemDirs(t *testing.T) {
 	tempDir := t.TempDir()
 

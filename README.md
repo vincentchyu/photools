@@ -141,6 +141,54 @@ photools comes with a sleek, native macOS desktop application built with SwiftUI
 
 ---
 
+## 🛡️ Smart Metadata Tiering & Policy Architecture
+
+Unlike traditional tools that either force modifying RAW binaries or only output detached sidecars, **photools** adopts an **Intent-Driven 4-Layer Metadata Model**:
+
+```
+                    Photography Metadata
+                              │
+         ┌────────────────────┼────────────────────┐
+         ↓                    ↓                    ↓
+    Tier 1: Original     Tier 2: Corrected    Tier 3: Derived & Tier 4: Workflow
+     Camera Facts           GPS Truth               Location & Subjective
+         │                    │                    │
+   Camera/Lens/Shutter    GPX Matched GPS          5-Level Reverse Geocode
+   DateTime/Native GPS    Interpolated GPS         Hierarchical Tags/Rating
+         │                    │                    │
+         ↓                    ↓                    ↓
+    Preserve in RAW       Write to RAW EXIF        .nef.xmp Sidecar
+                          Embed in Companion JPG   Embed in Companion JPG
+                          Sync to .nef.xmp         (Never touches RAW)
+```
+
+### ⚙️ 4-Tier Writing Policies (`--sidecar-policy`)
+
+| Policy | CLI Flag | Corrected Facts (GPS) | Derived Info (Location/Tags) | Use Case & Design Rationale |
+| :--- | :--- | :--- | :--- | :--- |
+| **Smart Tiered** *(Default)* | `smart` | **RAW EXIF + JPG Embed + XMP Sync** | **RAW Read-Only (`.xmp`) + JPG Embed** | **Golden Balance**: RAW permanently keeps GPS truth for native viewers; location tags live in XMP; JPGs work everywhere. |
+| **Sidecar Only** | `sidecar_only` | Standalone `.xmp` | Standalone `.xmp` | Zero touch on RAW/JPG binary files. Perfect for read-only NAS archives. |
+| **Embed & Sidecar** | `embed_and_sidecar` | Modify RAW & JPG | Modify RAW & JPG + Sync `.xmp` | Full dual-mirror synchronization. |
+| **Embed Only** | `embed_only` | Modify RAW & JPG | Modify RAW & JPG (No XMP) | Minimalist mode without sidecar clutter. |
+
+### 🔍 Metadata Provenance & Audit Fingerprints
+When photools corrects or interpolates coordinates, it embeds audit trails directly into the XMP sidecar:
+```xml
+<rdf:Description rdf:about=""
+  xmlns:photools="http://ns.photools.app/1.0/"
+  photools:GPSSource="gpx"
+  photools:GPSMatchMethod="time_proximity"
+  photools:InterpolateWindow="15m"
+  photools:Processor="photools v1.2.0"
+  photools:ProcessedDate="2026-08-29T14:30:00+08:00" />
+```
+
+### 📂 Companion File Extension Whitelist (`--companion-exts`)
+- Automatically tracks and atomically archives paired companion files (e.g. `wav` voice memos, `acr` presets, `exf`, `xmp`).
+- Preserves full compound extensions during date-based renaming (`DSC_2948.nef.xmp` $\rightarrow$ `2026-01-01-DSC_2948.nef.xmp`).
+
+---
+
 ## 🚀 Quick Start
 
 ### Option A: macOS Native App (Recommended for Photographers)
@@ -150,8 +198,14 @@ photools comes with a sleek, native macOS desktop application built with SwiftUI
 
 ### Option B: Command Line (CLI) & Scripting
 ```bash
-# Process photos with full automated pipeline (GPX Matching + Geocoding + Archiving)
+# Process photos with full automated pipeline (Smart Tiered Mode by default)
 photools pipeline
+
+# Specify metadata policy (smart / sidecar_only / embed_and_sidecar / embed_only)
+photools pipeline --sidecar-policy=smart
+
+# Specify companion file extensions to track (e.g. voice memos & ACR sidecars)
+photools pipeline --companion-exts="wav,acr,exf"
 
 # Enable GPS intelligent time-weighted interpolation (e.g. 30-minute window)
 photools pipeline --interpolate=true --interpolate-window=30m
@@ -171,7 +225,7 @@ photools tui
 ```
 - **`[1/2/3/4]` or `[Space]`**: Toggle capability plugins on the fly.
 - **`[O]`**: Open plugin options modal (e.g. adjust search window, time offset).
-- **`[S]`**: Global settings modal with `[Tab]` path completion.
+- **`[S]`**: Global settings modal (cycle through 4-tier sidecar policies with `[Space]`, `[Tab]` path completion).
 - **`[Enter]`**: Trigger Dry-Run inspection, followed by execution.
 
 ---
@@ -244,6 +298,7 @@ hdiutil create -volname "photools" -srcfolder dist/photoolsApp.app -ov -format U
 For in-depth architectural and implementation specifications, see the dedicated design docs:
 
 - 📖 **[System Architecture & Phased Scheduler Design](docs/ARCHITECTURE_AND_DESIGN.md)**
+- 🏷️ **[ExifTool Metadata Specification & Software Compatibility Matrix](docs/EXIFTOOL_METADATA_SPECIFICATION.md)**
 - 🍏 **[macOS Native Client Architecture & C-Shared FFI Design](docs/MACOS_CLIENT_TECHNICAL_DESIGN.md)**
 - 🛡️ **[ExifTool Stay-Open Daemon Pool & Data Safety Design](docs/EXIFTOOL_IO_AND_SAFETY_DESIGN.md)**
 - 🗺️ **[GeoNames Offline Data Pack & 3D KD-Tree Spatial Index Design](docs/GEONAMES_AND_GEOCODING_DESIGN.md)**

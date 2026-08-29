@@ -156,3 +156,41 @@ func TestArchiver_MoveAssetWithRename(t *testing.T) {
 		t.Errorf("目标 XMP 文件不存在: %v", err)
 	}
 }
+
+func TestArchiver_MoveAssetWithCompoundXMP(t *testing.T) {
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "Inbox")
+	targetDir := filepath.Join(tempDir, "Processed", "2026", "0101")
+
+	_ = os.MkdirAll(sourceDir, 0o755)
+	_ = os.MkdirAll(targetDir, 0o755)
+
+	raw := filepath.Join(sourceDir, "DSC_2948.nef")
+	jpg := filepath.Join(sourceDir, "DSC_2948.JPG")
+	rawXmp := filepath.Join(sourceDir, "DSC_2948.nef.xmp")
+	jpgXmp := filepath.Join(sourceDir, "DSC_2948.JPG.xmp")
+
+	_ = os.WriteFile(raw, []byte("raw"), 0o644)
+	_ = os.WriteFile(jpg, []byte("jpg"), 0o644)
+	_ = os.WriteFile(rawXmp, []byte("rawXmp"), 0o644)
+	_ = os.WriteFile(jpgXmp, []byte("jpgXmp"), 0o644)
+
+	archiver := NewArchiver()
+	err := archiver.MoveFilesWithRename([]string{raw, jpg, rawXmp, jpgXmp}, targetDir, "DSC_2026-01-01_2948")
+	if err != nil {
+		t.Fatalf("MoveFilesWithRename 失败: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(targetDir, "DSC_2026-01-01_2948.nef")); err != nil {
+		t.Errorf("目标 RAW 文件不存在: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(targetDir, "DSC_2026-01-01_2948.jpg")); err != nil {
+		t.Errorf("目标 JPG 文件不存在: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(targetDir, "DSC_2026-01-01_2948.nef.xmp")); err != nil {
+		t.Errorf("目标 .nef.xmp 文件不存在: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(targetDir, "DSC_2026-01-01_2948.jpg.xmp")); err != nil {
+		t.Errorf("目标 .jpg.xmp 文件不存在: %v", err)
+	}
+}

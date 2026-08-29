@@ -31,6 +31,14 @@ func GetStandardDirectorySpecs(baseDir string, customGPXDir ...string) []DirMean
 		}
 	}
 
+	logPath := ""
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		logPath = filepath.Join(home, ".logs", "photools")
+	} else {
+		logPath = filepath.Join(".logs", "photools")
+	}
+
 	return []DirMeaning{
 		{
 			Name:     "Inbox",
@@ -66,10 +74,10 @@ func GetStandardDirectorySpecs(baseDir string, customGPXDir ...string) []DirMean
 		},
 		{
 			Name:     "Logs",
-			RelPath:  "Logs",
-			FullPath: filepath.Join(baseDir, "Logs"),
+			RelPath:  "~/.logs/photools",
+			FullPath: logPath,
 			Icon:     "📋",
-			Usage:    "处理日志与待处理资产清单 (Markdown 报告)",
+			Usage:    "处理日志与待处理资产清单 (Markdown 报告，默认 ~/.logs/photools)",
 			ForMode:  "通用系统记录",
 		},
 	}

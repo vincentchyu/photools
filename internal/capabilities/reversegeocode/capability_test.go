@@ -58,6 +58,7 @@ func TestReverseGeocodeCapability_ExecuteProcess_Success(t *testing.T) {
 		JPGPath:  "/tmp/DSC_001.JPG",
 		XMPPath:  "/tmp/DSC_001.xmp",
 	})
+	actx.SidecarPolicy = domain.PolicyEmbedAndSidecar
 	// 上海人民广场经纬度
 	actx.SetGPS(31.2304, 121.4737)
 
@@ -81,6 +82,68 @@ func TestReverseGeocodeCapability_ExecuteProcess_Success(t *testing.T) {
 	}
 	if len(events) == 0 {
 		t.Errorf("expected progress event")
+	}
+}
+
+func TestReverseGeocodeCapability_PolicyReadOnly(t *testing.T) {
+	runner := &mockRunner{}
+	geocoder := geocoding.NewReverseGeocoder()
+
+	capInst := NewCapability(Config{
+		Runner:   runner,
+		Geocoder: geocoder,
+	})
+
+	actx := domain.NewAssetContext(domain.AssetGroup{
+		BaseName: "DSC_001",
+		RawPath:  "/tmp/DSC_001.NEF",
+		JPGPath:  "/tmp/DSC_001.JPG",
+	})
+	actx.SidecarPolicy = domain.PolicyReadOnly
+	actx.SetGPS(31.2304, 121.4737)
+
+	err := capInst.ExecuteProcess(context.Background(), actx, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if actx.Location == nil {
+		t.Fatalf("expected location to be populated")
+	}
+	// PolicyReadOnly: RAW 写 XMP (1个) + JPG 写内嵌 (1个) = 2个
+	if len(actx.ModifiedFiles) != 2 {
+		t.Errorf("expected 2 modified files in PolicyReadOnly (RAW.XMP + JPG), got %d: %v", len(actx.ModifiedFiles), actx.ModifiedFiles)
+	}
+}
+
+func TestReverseGeocodeCapability_SidecarOnly(t *testing.T) {
+	runner := &mockRunner{}
+	capInst := NewCapability(Config{
+		Runner: runner,
+	})
+
+	actx := domain.NewAssetContext(domain.AssetGroup{
+		BaseName: "DSC_001",
+		RawPath:  "/tmp/DSC_001.NEF",
+		JPGPath:  "/tmp/DSC_001.JPG",
+	})
+	actx.SidecarOnly = true
+	actx.SetGPS(31.2304, 121.4737)
+
+	err := capInst.ExecuteProcess(context.Background(), actx, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if actx.Location == nil {
+		t.Fatalf("expected location populated")
+	}
+
+	// 确认在 SidecarOnly 下只修改了 XMP 文件
+	for _, mod := range actx.ModifiedFiles {
+		if !strings.HasSuffix(mod, ".xmp") {
+			t.Errorf("SidecarOnly 模式下不应修改非 XMP 文件: %s", mod)
+		}
 	}
 }
 

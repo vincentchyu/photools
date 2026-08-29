@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vincentchyu/photools/common"
 	"github.com/vincentchyu/photools/internal/domain"
 )
 
@@ -36,16 +37,20 @@ type OptionSpec = domain.OptionSpec
 
 // GlobalSettings 封装整条流水线的全局环境与调度配置
 type GlobalSettings struct {
-	BaseDir       string   `json:"base_dir"`
-	SourceDir     string   `json:"source_dir"`
-	TargetDir     string   `json:"target_dir"`
-	GPXDir        string   `json:"gpx_dir"`        // GPX 轨迹目录 (默认 ~/.config/gpx)
-	FlatMode      bool     `json:"flat_mode"`      // 忽略传统分层目录结构，在指定目录下直接扫描并原地保存/处理
-	RawExtensions []string `json:"raw_extensions"` // RAW 格式白名单
-	Workers       int      `json:"workers"`        // 并发处理协程数
-	AllowNoGPS    bool     `json:"allow_no_gps"`   // 软降级容错：无 GPS 坐标时允许跳过地名写入直接归档
-	TestBackup    bool     `json:"test_backup"`    // 处理前是否快照备份源文件
-	BackupDir     string   `json:"backup_dir"`     // 自定义备份目录
+	BaseDir             string   `json:"base_dir"`
+	SourceDir           string   `json:"source_dir"`
+	TargetDir           string   `json:"target_dir"`
+	GPXDir              string   `json:"gpx_dir"`              // GPX 轨迹目录 (默认 ~/.config/gpx)
+	LogDir              string   `json:"log_dir"`              // 全局日志与报告目录 (默认 ~/.logs/photools)
+	FlatMode            bool     `json:"flat_mode"`            // 忽略传统分层目录结构，在指定目录下直接扫描并原地保存/处理
+	SidecarPolicy       string   `json:"sidecar_policy"`       // 侧车写入策略: read_only, sidecar_only, embed_and_sidecar, embed_only
+	SidecarOnly         bool     `json:"sidecar_only"`         // 仅生成/修改 {file}.xmp 侧车文件 (向后兼容标志)
+	CompanionExtensions []string `json:"companion_extensions"` // 伴随文件扩展名白名单 (如 wav, acr, exf)
+	RawExtensions       []string `json:"raw_extensions"`       // RAW 格式白名单
+	Workers             int      `json:"workers"`              // 并发处理协程数
+	AllowNoGPS          bool     `json:"allow_no_gps"`         // 软降级容错：无 GPS 坐标时允许跳过地名写入直接归档
+	TestBackup          bool     `json:"test_backup"`          // 处理前是否快照备份源文件
+	BackupDir           string   `json:"backup_dir"`           // 自定义备份目录
 }
 
 // SessionConfig 封装当前运行时会话的全部配置（全局配置 + 各插件独立配置）
@@ -71,6 +76,11 @@ func DefaultGPXDir() string {
 	return filepath.Join(home, ".config", "gpx")
 }
 
+// DefaultLogDir 返回内置默认的全局日志目录 (~/.logs/photools)
+func DefaultLogDir() string {
+	return common.GetDefaultLogDir()
+}
+
 // DefaultGlobalSettings 返回内置默认的全局设置
 func DefaultGlobalSettings(baseDir ...string) GlobalSettings {
 	bDir := ""
@@ -87,16 +97,20 @@ func DefaultGlobalSettings(baseDir ...string) GlobalSettings {
 	bDir, _ = filepath.Abs(bDir)
 
 	return GlobalSettings{
-		BaseDir:       bDir,
-		SourceDir:     filepath.Join(bDir, "Inbox"),
-		TargetDir:     filepath.Join(bDir, "Processed"),
-		GPXDir:        DefaultGPXDir(),
-		FlatMode:      false,
-		RawExtensions: []string{"nef", "cr3", "arw", "dng", "raf", "rw2", "orf"},
-		Workers:       runtime.NumCPU(),
-		AllowNoGPS:    false,
-		TestBackup:    false,
-		BackupDir:     filepath.Join(bDir, "Inbox_bak"),
+		BaseDir:             bDir,
+		SourceDir:           filepath.Join(bDir, "Inbox"),
+		TargetDir:           filepath.Join(bDir, "Processed"),
+		GPXDir:              DefaultGPXDir(),
+		LogDir:              DefaultLogDir(),
+		FlatMode:            false,
+		SidecarPolicy:       common.PolicySmart.String(),
+		SidecarOnly:         false,
+		CompanionExtensions: common.DefaultCompanionExtensions,
+		RawExtensions:       common.DefaultRawExtensions,
+		Workers:             runtime.NumCPU(),
+		AllowNoGPS:          false,
+		TestBackup:          false,
+		BackupDir:           filepath.Join(bDir, "Inbox_bak"),
 	}
 }
 
@@ -244,6 +258,31 @@ func GlobalOptionSpecs() []OptionSpec {
 			Type:         TypeBool,
 			Scope:        ScopeGlobal,
 			DefaultValue: false,
+		},
+		{
+			Key:          "sidecar_policy",
+			Name:         "元数据与侧车写入策略 (Sidecar Policy)",
+			Description:  "控制元数据写入目标：smart(智能分层模式：GPS修正写RAW/JPG/XMP，地名写XMP/JPG，默认推荐)、sidecar_only(纯XMP侧车)、embed_and_sidecar(双写同步)、embed_only(纯原图内嵌)",
+			Type:         TypeChoice,
+			Choices:      []string{string(domain.PolicySmart), string(domain.PolicySidecarOnly), string(domain.PolicyEmbedAndSidecar), string(domain.PolicyEmbedOnly)},
+			Scope:        ScopeGlobal,
+			DefaultValue: string(domain.PolicySmart),
+		},
+		{
+			Key:          "sidecar_only",
+			Name:         "仅生成 XMP 侧车文件 (Sidecar Only / 兼容选项)",
+			Description:  "元数据变更仅写入 {file}.xmp 侧车文件，严格保护不修改原始 RAW/JPG 文件（等价于 sidecar_policy=sidecar_only）",
+			Type:         TypeBool,
+			Scope:        ScopeGlobal,
+			DefaultValue: false,
+		},
+		{
+			Key:          "companion_extensions",
+			Name:         "伴随文件扩展名白名单",
+			Description:  "与主照片关联的伴随文件扩展名（如 wav, acr, exf，归档时整体原子移动）",
+			Type:         TypeString,
+			Scope:        ScopeGlobal,
+			DefaultValue: "wav,acr,exf",
 		},
 		{
 			Key:          "raw_extensions",

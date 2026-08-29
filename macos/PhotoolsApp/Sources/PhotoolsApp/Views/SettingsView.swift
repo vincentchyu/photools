@@ -123,6 +123,7 @@ public struct SettingsView: View {
 
             Section(lang.text(.performanceSection)) {
                 TextField(lang.text(.rawExtensions), text: $store.rawExtensions)
+                TextField(lang.text(.companionExtensions), text: $store.companionExtensions)
                 Stepper("\(lang.text(.concurrencyWorkers))：\(store.workers)", value: $store.workers, in: 1...32)
                 Toggle(lang.text(.testBackupMode), isOn: $store.testBackup)
             }
@@ -131,6 +132,20 @@ public struct SettingsView: View {
 
     private var pluginsTab: some View {
         Form {
+            Section(lang.text(.sidecarPolicy)) {
+                Picker(lang.text(.sidecarPolicy), selection: $store.sidecarPolicy) {
+                    Text(lang.text(.policySmart)).tag("smart")
+                    Text(lang.text(.policySidecarOnly)).tag("sidecar_only")
+                    Text(lang.text(.policyEmbedAndSidecar)).tag("embed_and_sidecar")
+                    Text(lang.text(.policyEmbedOnly)).tag("embed_only")
+                }
+                .pickerStyle(.menu)
+
+                Text(policyDescription(for: store.sidecarPolicy))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
             Section(lang.text(.pluginDefaults)) {
                 Toggle(lang.text(.pluginGpxMatch), isOn: $store.enableGPXMatch)
                 Toggle(lang.text(.pluginInterpolate), isOn: $store.enableInterpolate)
@@ -150,6 +165,21 @@ public struct SettingsView: View {
                 Toggle(lang.text(.inPlaceRename), isOn: $store.inPlace)
                 Toggle(lang.text(.allowNoGps), isOn: $store.allowNoGPS)
             }
+        }
+    }
+
+    private func policyDescription(for policy: String) -> String {
+        switch policy {
+        case "smart", "read_only":
+            return lang.text(.policySmartDesc)
+        case "sidecar_only":
+            return lang.text(.policySidecarOnlyDesc)
+        case "embed_and_sidecar":
+            return lang.text(.policyEmbedAndSidecarDesc)
+        case "embed_only":
+            return lang.text(.policyEmbedOnlyDesc)
+        default:
+            return lang.text(.policySmartDesc)
         }
     }
 

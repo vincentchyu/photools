@@ -1,6 +1,6 @@
 # 📸 photools 项目持久化记忆与核心架构规约 (GEMINI.md)
 
-本文档作为 AI Agent 在本工作区（`/Users/vincent/Pictures/GPS`）的**唯一核心持久化记忆、技术规范与架构约束文件（Single Source of Truth）**。后续所有新增功能、架构演进、代码重构或测试均必须严格遵守本文档。
+本文档作为 AI Agent 在本工作区（photools 代码库根目录）的**唯一核心持久化记忆、技术规范与架构约束文件（Single Source of Truth）**。后续所有新增功能、架构演进、代码重构或测试均必须严格遵守本文档。
 
 ---
 
@@ -48,11 +48,11 @@
      - 默认推算窗口 15m（支持 `--interpolate-window` 自定义），开启 `--allow-no-gps` 时超出窗口安全跳过而不阻断流水线。
 3. **`reverse_geocode` (Priority 20 · 阶段 3)**:
    - 基于 3D KD-Tree 离线高精空间索引；
-   - 写入国家、省份、城市、区县、风景区 POI 中文元数据（IPTC/XMP）；
+   - 写入国家、省份、城市、区县、风景区 POI 中文元数据（IPTC/XMP），支持 IPTC Extension 完整结构化位置模型 (`LocationCreated` / `LocationShown`) 与 Lightroom 分层关键词标签树 (`XMP-lr:HierarchicalSubject`)；
    - **离线地理数据包终端安装规约**：为保证地理数据库来源准确性、网络完整性与数据源校验，离线数据包严禁在 GUI 客户端内隐式下载安装，必须由使用者在终端（CLI）中显式执行 `photools geodata install <target>` 安装。GUI 仅负责状态探测、命令复制与 3D KD-Tree 坐标反查测试。
 4. **`date_archive` (Priority 100 · 阶段 4)**:
    - 依据原始拍摄日期规范化重命名；
-   - 原子安全归档至 `Processed/YYYY/MMDD/`（破坏性移动插件，必须具备最低优先级）。
+   - 原子安全归档至 `Processed/YYYY/MMDD/`（破坏性移动插件，必须具备最低优先级），完整保留 `.nef.xmp` / `.jpg.xmp` 复合侧车后缀。
 
 ### 3.2 阶段流转、调度器与性能契约
 - **多阶段平滑交接与就绪判定**：
@@ -63,11 +63,20 @@
   - 离线地理数据包与 KD-Tree 建树全局单例装载一次，杜绝重复 I/O 与建树开销；
   - **ExifTool Stay-Open 常驻守护进程池 (`DefaultRunner`)**：生产环境默认启用常驻进程池（`StayOpenPool`），通过 `exiftool -stay_open True -@ -` 消除重复 `fork/exec` 子进程开销，单次读取开销从 ~30ms 骤降至 1~2ms，并具备进程崩溃自愈与优雅退出能力。
 - **软降级容错 (`--allow-no-gps`)**：彻底无 GPS 照片在逆地理阶段良性跳过（不产生阻塞 Issue），安全进入阶段 4 按拍摄日期规范归档；
-- **并发与待处理报告**：按 basename 资产组并发处理，处理中断或待补资产自动生成详尽的 Markdown 原因清单（`Logs/inbox_pending_report_latest.md`）；
+- **并发与待处理报告**：按 basename 资产组并发处理，处理中断或待补资产自动生成详尽的 Markdown 原因清单（默认 `~/.logs/photools/inbox_pending_report_latest.md`）；
 - **全量实时中文日志流落盘 (Real-Time Log Streaming)**：
-  - 流水线执行期间产生的全部中文实时事件流（含插件自检、阶段流转、每张照片推算/打标/归档进度与异常）强制实时流式落盘至 `Logs/photools_latest.log` 与带时间戳的 `Logs/photools_YYYYMMDD_HHMMSS.log`；
+  - 流水线执行期间产生的全部中文实时事件流（含插件自检、阶段流转、每张照片推算/打标/归档进度与异常）强制实时流式落盘至用户主目录全局日志中心 `~/.logs/photools/photools_latest.log` 与带时间戳的 `~/.logs/photools/photools_YYYYMMDD_HHMMSS.log`，彻底杜绝在照片工作区目录产生 `Logs/` 垃圾文件；
   - 采用毫秒级带时区时间戳格式（`[HH:MM:SS.mmm] [LEVEL] [阶段] 消息`），并在任务结算时自动追加 Execution Summary 与异常清单；
 - **扁平原地模式与就地保存 (Flat Mode & In-Place)**：支持忽略传统 `Inbox/` -> `Processed/YYYY/MMDD/` 分层，直接指定源目录就地扫描、就地逆地理/打标签、并原地规范化重命名，且同一目录下重命名严格免自冲突；
+- **智能元数据分层模型与四档策略 (`SidecarPolicy` · `--sidecar-policy`)** ✨：
+  1. `smart`（默认/推荐 · 智能分层模式）：
+     - **第二层修正事实 (GPS/时间修正)**：写入 RAW EXIF 头部 + 伴随 JPG 内嵌 + 同步 `.xmp` 侧车（附带 Photools 溯源指纹）；
+     - **第三层派生信息 (中文地名/分层标签)**：RAW 严格只读仅写 `.nef.xmp` 侧车，JPG 交付格式直接内嵌写入；
+     - 黄金平衡点：RAW 永久拥有标准 GPS 事实，地名由 XMP 承载，JPG 跨设备即开即看。
+  2. `sidecar_only`（纯 XMP 侧车模式）：RAW 与 JPG 均不触碰原图，所有修正与派生元数据严格输出为独立 `{file}.xmp` 侧车；
+  3. `embed_and_sidecar`（双写同步模式）：直接修改原图内嵌 EXIF，同时维护配套的 `.xmp` 侧车文件；
+  4. `embed_only`（纯原图内嵌模式）：直接修改原图内嵌 EXIF，不产生或更新任何 `.xmp` 侧车文件。
+- **伴随文件扩展名白名单 (`CompanionExtensions` · `--companion-exts`)** ✨：支持针对 RAW/JPG 主文件配套的伴随文件（如 `wav` 录音、`acr` 调色、`exf`、`xmp` 等）进行拓扑发现、原子同步流转与规范重命名归档；
 - **统一设置抽象与会话覆盖 (Session & Plugin Settings)**：
   - 核心配置由 `internal/config/schema.go` 统一定义，全局参数与插件专属参数清晰正交解耦；
   - TUI 中按 `[s]` 调出全局设置，光标选中插件按 `[o]` 调出插件专属设置，输入路径支持 `[Tab]` 智能补全与多候选轮转；
@@ -94,9 +103,12 @@
 
 ## 5. 主动式零技术债务与工程纪律 (AI 必遵)
 
-1. **禁止被动等待发现**：AI 助手在每次架构调整或功能演进时，必须主动全库扫描死代码、过时包与残留引用，主动清理与重构；
-2. **历史废弃包物理移除**：一旦新架构方案落地并验证无误，被替代的旧包必须立即物理删除；
-3. **CLI 与 Shell Tab 自动补全 100% 同步**：新增、修改或弃用任何 CLI 命令或参数时，必须同步增量维护 `internal/completion/`，确保 Zsh、Bash、Fish 补全脚本与 CLI 保持一致。
+1. **严禁硬编码魔法值 (No Magic Values/Strings)**：
+   - 严禁在业务代码、插件逻辑或测试中散落硬编码字符串（如插件 ID、GPS 来源、推算算法、侧车策略、阶段名称、日志级别、默认扩展名等）；
+   - **全局枚举与通用常量必须统一定义在根目录的 `common` 包中**（`common/enums.go`），其他模块（如 `internal/domain`、各能力插件等）通过引用或类型别名（Type Alias）使用，保证全局唯一事实源；
+2. **禁止被动等待发现**：AI 助手在每次架构调整或功能演进时，必须主动全库扫描死代码、过时包与残留引用，主动清理与重构；
+3. **历史废弃包物理移除**：一旦新架构方案落地并验证无误，被替代的旧包必须立即物理删除；
+4. **CLI 与 Shell Tab 自动补全 100% 同步**：新增、修改或弃用任何 CLI 命令或参数时，必须同步增量维护 `internal/completion/`，确保 Zsh、Bash、Fish 补全脚本与 CLI 保持一致。
 
 ---
 
@@ -104,7 +116,7 @@
 
 未来任何时候为 photools 扩展或重构能力插件，AI Agent **必须无条件、按序且 100% 完整执行以下 7 步闭环流程**：
 
-1. **`internal/domain/capability.go`**：注册 `CapabilityID` 常量并实现 `Capability` 接口（包含 `SupportedOptions()` 与 `Configure()`）；
+1. **`common/enums.go` & `internal/domain/capability.go`**：在 `common` 注册 `CapabilityID` 常量并实现 `Capability` 接口（包含 `SupportedOptions()` 与 `Configure()`）；
 2. **`internal/capabilities/<plugin>/`**：在能力包内部实现业务逻辑、自描述配置契约 `SupportedOptions()` 与 `Configure()`，并提供独立单元测试；
 3. **`internal/config/plugins.go`**：在 `defaultMetas` 注册并实现 `~/.config/photools/plugins.json` 自动自愈迁移逻辑，同步更新 `plugins_test.go`；
 4. **`internal/pipeline/`**：在 `builder.go` 接入 `PipelineOptions`，并在 `orchestrator.go` 编排阶段流转与降级容错；

@@ -41,24 +41,26 @@ func ParsePhotoDate(dateTimeStr string) (time.Time, bool) {
 	return t, true
 }
 
-// FilterGPXFilesByDate 根据照片拍摄时间从全部 GPX 列表中筛选出最相关的候选文件：
-// 1. 梯队 1（日邻近 ±1 天）：优先匹配当天及前后各 1 天（±24h 容差）的 GPX 轨迹；
-// 2. 梯队 2（同月份扩展）：若 ±1 天未命中，则平滑扩展匹配当月（同一 YYYY-MM，支持多日合并轨迹）的 GPX 轨迹；
-// 3. 梯队 3（安全兜底）：无日期标识的文件持续保留，若前序均未命中则安全降级使用全量 GPX 列表。
+// FilterGPXFilesByDate 根据照片拍摄时间从全部 GPX 列表中严格筛选候选文件：
+// 1. 严格日邻近（当天及前后各 1 天 ±24h 容差跨午夜）：匹配拍摄当天的专属轨迹；
+// 2. 同月降级（日邻近无命中时，在同年同月内降级匹配，适用于多日合并轨迹的场景）；
+// 3. 通用无日期标识文件（如 track.gpx）：作为可能包含多日轨迹的候选文件保留；
+// 4. 日邻近和同月均无匹配时返回 nil，杜绝跨月将异地轨迹误传给 ExifTool。
 func FilterGPXFilesByDate(gpxFiles []string, photoDateTimeStr string) []string {
-	if len(gpxFiles) <= 1 {
-		return gpxFiles
+	if len(gpxFiles) == 0 {
+		return nil
 	}
 
 	photoDate, ok := ParsePhotoDate(photoDateTimeStr)
 	if !ok {
+		// 无法识别照片日期时，保留全量候选
 		return gpxFiles
 	}
 
 	prevDay := photoDate.AddDate(0, 0, -1).Format("2006-01-02")
 	currDay := photoDate.Format("2006-01-02")
 	nextDay := photoDate.AddDate(0, 0, 1).Format("2006-01-02")
-	targetMonth := photoDate.Format("2006-01") // YYYY-MM
+	sameMonth := photoDate.Format("2006-01") // 同年同月前缀，用于降级匹配
 
 	var dayMatches []string
 	var monthMatches []string
@@ -71,32 +73,30 @@ func FilterGPXFilesByDate(gpxFiles []string, photoDateTimeStr string) []string {
 			continue
 		}
 
-		// 梯队 1: ±1 天
+		// 严格日邻近匹配 (当天及跨午夜 ±1 天)
 		if fileDate == prevDay || fileDate == currDay || fileDate == nextDay {
 			dayMatches = append(dayMatches, file)
-		}
-
-		// 梯队 2: 同月份 (例如 2025-10)
-		if strings.HasPrefix(fileDate, targetMonth) {
+		} else if strings.HasPrefix(fileDate, sameMonth) {
+			// 同年同月降级（适用于合并轨迹文件，相差超 1 天但同月）
 			monthMatches = append(monthMatches, file)
 		}
 	}
 
-	// 1. 优先使用日邻近结果 (加上无日期兜底)
+	// 1. 优先使用日邻近结果（含无日期通用轨迹）
 	if len(dayMatches) > 0 {
 		return append(dayMatches, noDateFiles...)
 	}
 
-	// 2. 降级使用同月份结果 (加上无日期兜底)
+	// 2. 日邻近无命中时，降级使用同年同月轨迹（含无日期通用轨迹）
 	if len(monthMatches) > 0 {
 		return append(monthMatches, noDateFiles...)
 	}
 
-	// 3. 若只存在无日期文件且有过滤效果，返回无日期文件
-	if len(noDateFiles) > 0 && len(noDateFiles) < len(gpxFiles) {
+	// 3. 若只有无日期通用轨迹文件，作为候选返回
+	if len(noDateFiles) > 0 {
 		return noDateFiles
 	}
 
-	// 4. 全量兜底
-	return gpxFiles
+	// 4. 当天无任何匹配 GPX 轨迹
+	return nil
 }

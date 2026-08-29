@@ -2,26 +2,29 @@ package domain
 
 import (
 	"context"
+	"strings"
 	"sync"
+
+	"github.com/vincentchyu/photools/common"
 )
 
-// CapabilityID 能力插件唯一标识
-type CapabilityID string
+// CapabilityID 能力插件唯一标识 (指向 common.CapabilityID)
+type CapabilityID = common.CapabilityID
 
 const (
-	CapGPXMatching    CapabilityID = "gpx_matching"    // 能力 1: GPX 轨迹匹配与 GPS 修正
-	CapGPSInterpolate CapabilityID = "gps_interpolate" // 能力 1.5: GPS 智能邻近推断与时间插值
-	CapReverseGeocode CapabilityID = "reverse_geocode" // 能力 2: 逆地理编码写入元数据
-	CapDateArchive    CapabilityID = "date_archive"    // 能力 3: 按拍摄日期规范化归档
+	CapGPXMatching    = common.CapGPXMatching
+	CapGPSInterpolate = common.CapGPSInterpolate
+	CapReverseGeocode = common.CapReverseGeocode
+	CapDateArchive    = common.CapDateArchive
 )
 
-// PluginHealthStatus 插件健康自检状态
-type PluginHealthStatus string
+// PluginHealthStatus 插件健康自检状态 (指向 common.PluginHealthStatus)
+type PluginHealthStatus = common.PluginHealthStatus
 
 const (
-	HealthReady    PluginHealthStatus = "ready"    // 正常就绪
-	HealthDegraded PluginHealthStatus = "degraded" // 降级运行（如未安装离线数据包，降级到内置轻量库）
-	HealthFailed   PluginHealthStatus = "failed"   // 初始化失败（如关键命令缺失）
+	HealthReady    = common.HealthReady
+	HealthDegraded = common.HealthDegraded
+	HealthFailed   = common.HealthFailed
 )
 
 // PluginInitReport 插件初始化过程进度汇报
@@ -33,6 +36,75 @@ type PluginInitReport struct {
 	Percent  float64            // 0.0 ~ 1.0 (-1 表示不确定进度)
 	Status   PluginHealthStatus // 当前健康状态
 	Err      error              // 错误信息（若有）
+}
+
+// MetadataWriteIntent 元数据写入意图分类（指向 common.MetadataWriteIntent）
+type MetadataWriteIntent = common.MetadataWriteIntent
+
+const (
+	IntentOriginalFact  = common.IntentOriginalFact
+	IntentCorrectedFact = common.IntentCorrectedFact
+	IntentDerivedInfo   = common.IntentDerivedInfo
+	IntentWorkflowData  = common.IntentWorkflowData
+)
+
+// GPSSourceType GPS 坐标来源枚举 (指向 common.GPSSourceType)
+type GPSSourceType = common.GPSSourceType
+
+const (
+	GPSSourceCamera       = common.GPSSourceCamera
+	GPSSourceGPX          = common.GPSSourceGPX
+	GPSSourceInterpolated = common.GPSSourceInterpolated
+	GPSSourceManual       = common.GPSSourceManual
+)
+
+// GPSMatchMethodType GPS 匹配与推算算法枚举 (指向 common.GPSMatchMethodType)
+type GPSMatchMethodType = common.GPSMatchMethodType
+
+const (
+	GPSMatchMethodNativeCamera            = common.GPSMatchMethodNativeCamera
+	GPSMatchMethodTimeProximity           = common.GPSMatchMethodTimeProximity
+	GPSMatchMethodSphericalLinearInterpol = common.GPSMatchMethodSphericalLinearInterpol
+	GPSMatchMethodNearestNeighborAnchor   = common.GPSMatchMethodNearestNeighborAnchor
+)
+
+// DefaultProcessorName 默认处理引擎名称与版本标识
+const DefaultProcessorName = common.DefaultProcessorName
+
+// GPSProvenance 记录 GPS 坐标的清洗与修正溯源指纹
+type GPSProvenance struct {
+	Source      GPSSourceType      `json:"source"`       // 来源: camera, gpx, interpolated, manual
+	MatchMethod GPSMatchMethodType `json:"match_method"` // 推算方法: native_camera, time_proximity, spherical_linear_interpolation, nearest_neighbor_anchor
+	Window      string             `json:"window"`       // 推算窗口: 15m, 30m, 1h
+	Processor   string             `json:"processor"`    // 处理引擎: photools v1.2.0
+	Timestamp   string             `json:"timestamp"`    // 处理时间戳 (ISO 8601)
+}
+
+// SidecarPolicy 侧车写入策略 (指向 common.SidecarPolicy)
+type SidecarPolicy = common.SidecarPolicy
+
+const (
+	PolicySmart           = common.PolicySmart
+	PolicyReadOnly        = common.PolicyReadOnly
+	PolicySidecarOnly     = common.PolicySidecarOnly
+	PolicyEmbedAndSidecar = common.PolicyEmbedAndSidecar
+	PolicyEmbedOnly       = common.PolicyEmbedOnly
+)
+
+// NormalizePolicy 规整化策略输入（支持别名与向后兼容）
+func NormalizePolicy(policy string) SidecarPolicy {
+	switch strings.ToLower(strings.TrimSpace(policy)) {
+	case string(PolicySidecarOnly), "sidecar":
+		return PolicySidecarOnly
+	case string(PolicyEmbedAndSidecar), "dual":
+		return PolicyEmbedAndSidecar
+	case string(PolicyEmbedOnly), "embed":
+		return PolicyEmbedOnly
+	case string(PolicySmart), string(PolicyReadOnly), "smart_read_only", "":
+		return PolicySmart
+	default:
+		return PolicySmart
+	}
 }
 
 // AssetContext 单个拍摄单元在流水线各阶段流转时的共享上下文
@@ -49,11 +121,14 @@ type AssetContext struct {
 	Latitude       float64
 	Longitude      float64
 	Altitude       float64
+	Provenance     *GPSProvenance
 	Location       *LocationInfo
 	TargetDir      string
 	NewBaseName    string
 
-	// 执行标记与修改文件记录
+	// 执行策略与修改文件记录
+	SidecarPolicy SidecarPolicy // 侧车写入策略 (默认 PolicySmart)
+	SidecarOnly   bool          // 保持向后兼容标志 (等价于 SidecarPolicy == PolicySidecarOnly)
 	ModifiedFiles []string
 	Skipped       bool
 	SkipReason    string
@@ -62,10 +137,68 @@ type AssetContext struct {
 	Batch []*AssetContext
 }
 
+// GetPolicy 返回当前生效的侧车策略（自动兼容 SidecarOnly 标志）
+func (c *AssetContext) GetPolicy() SidecarPolicy {
+	if c.SidecarOnly {
+		return PolicySidecarOnly
+	}
+	if c.SidecarPolicy != "" {
+		return NormalizePolicy(string(c.SidecarPolicy))
+	}
+	return PolicySmart
+}
+
+// ShouldEmbed 基于元数据意图判断是否应当直接修改内嵌元数据
+func (c *AssetContext) ShouldEmbed(intent MetadataWriteIntent, isRaw bool) bool {
+	policy := c.GetPolicy()
+	switch policy {
+	case PolicySidecarOnly:
+		return false
+	case PolicyEmbedAndSidecar, PolicyEmbedOnly:
+		return true
+	case PolicySmart, PolicyReadOnly:
+		if !isRaw {
+			// 非 RAW (如 JPG 交付格式) 始终直接内嵌全部元数据
+			return true
+		}
+		// 对 RAW 主文件：仅允许修正事实 (如 GPS 经纬度/时间偏移) 写入 EXIF 头部，派生信息与工作流绝不触碰 RAW
+		return intent == IntentCorrectedFact
+	default:
+		return !isRaw || intent == IntentCorrectedFact
+	}
+}
+
+// ShouldWriteSidecar 基于元数据意图判断是否应当生成/更新独立 XMP 侧车文件
+func (c *AssetContext) ShouldWriteSidecar(intent MetadataWriteIntent, isRaw bool) bool {
+	policy := c.GetPolicy()
+	switch policy {
+	case PolicySidecarOnly, PolicyEmbedAndSidecar:
+		return true
+	case PolicyEmbedOnly:
+		return false
+	case PolicySmart, PolicyReadOnly:
+		// Smart 模式下：RAW 资产的所有修正与派生元数据均同步写入 XMP 侧车
+		return isRaw
+	default:
+		return isRaw
+	}
+}
+
+// ShouldWriteSidecarFor 判断对于指定文件是否应该生成/更新独立 XMP 侧车文件 (向后兼容)
+func (c *AssetContext) ShouldWriteSidecarFor(isRaw bool) bool {
+	return c.ShouldWriteSidecar(IntentCorrectedFact, isRaw)
+}
+
+// ShouldEmbedMetadataFor 判断对于指定文件是否应该直接修改其内嵌 EXIF/IPTC (向后兼容)
+func (c *AssetContext) ShouldEmbedMetadataFor(isRaw bool) bool {
+	return c.ShouldEmbed(IntentCorrectedFact, isRaw)
+}
+
 // NewAssetContext 初始化资产上下文
 func NewAssetContext(asset AssetGroup) *AssetContext {
 	return &AssetContext{
-		Asset: asset,
+		Asset:         asset,
+		SidecarPolicy: PolicyReadOnly,
 	}
 }
 
@@ -101,6 +234,24 @@ func (c *AssetContext) SetGPS(lat, lon float64) {
 	c.Latitude = lat
 	c.Longitude = lon
 	c.HasGPS = true
+}
+
+// SetGPSWithProvenance 设置经纬度及溯源指纹信息
+func (c *AssetContext) SetGPSWithProvenance(lat, lon, alt float64, prov GPSProvenance) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Latitude = lat
+	c.Longitude = lon
+	c.Altitude = alt
+	c.HasGPS = true
+	c.Provenance = &prov
+}
+
+// GetProvenance 安全读取溯源指纹
+func (c *AssetContext) GetProvenance() *GPSProvenance {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.Provenance
 }
 
 // SetLocation 设置逆地理位置信息

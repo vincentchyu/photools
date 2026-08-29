@@ -307,10 +307,33 @@ public struct PipelineDashboardView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
+                        Text(lang.text(.sidecarPolicy))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Picker("", selection: $store.sidecarPolicy) {
+                            Text(lang.text(.policySmart)).tag("smart")
+                            Text(lang.text(.policySidecarOnly)).tag("sidecar_only")
+                            Text(lang.text(.policyEmbedAndSidecar)).tag("embed_and_sidecar")
+                            Text(lang.text(.policyEmbedOnly)).tag("embed_only")
+                        }
+                        .pickerStyle(.menu)
+                        .font(.caption)
+                    }
+
+                    HStack {
                         Text(lang.text(.rawExtensionsPrompt))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         TextField("nef,cr3,arw,dng...", text: $store.rawExtensions)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.caption.monospaced())
+                    }
+
+                    HStack {
+                        Text(lang.text(.companionExtensions))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextField("wav,acr,exf...", text: $store.companionExtensions)
                             .textFieldStyle(.roundedBorder)
                             .font(.caption.monospaced())
                     }

@@ -6,8 +6,26 @@
 dist/
 /.agents/
 /test/
+/test1/
 /.codex/
-# 地理本地字典数据（屏蔽庞大 JSON 字典，可通过 Python 脚本本地生成）
 /pkg/geodata/data/
 /scratch/
-/script/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# IDE & Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Swift / Xcode Build Cache
+.build/
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/

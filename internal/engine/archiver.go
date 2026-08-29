@@ -106,11 +106,25 @@ func (a *Archiver) BuildArchiveDir(baseDir, dateTimeOriginal string) (string, er
 	return filepath.Join(baseDir, t.Format("2006"), t.Format("0102")), nil
 }
 
+// ExtractFileSuffix 提取文件的规范化后缀（支持 .nef.xmp / .jpg.xmp 等复合侧车后缀）
+func (a *Archiver) ExtractFileSuffix(sourcePath string) string {
+	lower := strings.ToLower(sourcePath)
+	if strings.HasSuffix(lower, ".xmp") {
+		trimmed := sourcePath[:len(sourcePath)-4]
+		subExt := strings.ToLower(filepath.Ext(trimmed))
+		if subExt != "" && len(subExt) <= 6 { // 识别形如 .nef, .jpg, .cr3, .arw
+			return subExt + ".xmp"
+		}
+		return ".xmp"
+	}
+	return strings.ToLower(filepath.Ext(sourcePath))
+}
+
 // CheckConflict 检查目标目录是否存在重名冲突
 func (a *Archiver) CheckConflict(files []string, targetDir, newBaseName string) (bool, string) {
 	for _, source := range files {
-		ext := strings.ToLower(filepath.Ext(source))
-		target := filepath.Join(targetDir, newBaseName+ext)
+		suffix := a.ExtractFileSuffix(source)
+		target := filepath.Join(targetDir, newBaseName+suffix)
 		// 如果目标文件与源文件路径完全相同（未变更），不判定为冲突
 		if absSrc, err := filepath.Abs(source); err == nil {
 			if absTgt, err := filepath.Abs(target); err == nil && absSrc == absTgt {
@@ -135,8 +149,8 @@ func (a *Archiver) MoveFilesWithRename(files []string, targetDir, newBaseName st
 	}
 
 	for _, source := range files {
-		ext := strings.ToLower(filepath.Ext(source))
-		target := filepath.Join(targetDir, newBaseName+ext)
+		suffix := a.ExtractFileSuffix(source)
+		target := filepath.Join(targetDir, newBaseName+suffix)
 		if absSrc, err := filepath.Abs(source); err == nil {
 			if absTgt, err := filepath.Abs(target); err == nil && absSrc == absTgt {
 				continue

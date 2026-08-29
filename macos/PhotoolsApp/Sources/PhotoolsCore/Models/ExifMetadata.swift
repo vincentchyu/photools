@@ -44,6 +44,15 @@ public struct ExifMetadata: Sendable {
     public let title: String?
     public let description: String?
 
+    // 溯源指纹与来源标记 (Provenance)
+    public let gpsSource: String?
+    public let gpsMatchMethod: String?
+    public let interpolateWindow: String?
+    public let processor: String?
+    public let processedDate: String?
+    public let geocodeSource: String?
+    public let sidecarPath: String?
+
     // 全部原始标签列表（按 Group 分组）
     public let rawTags: [ExifTagItem]
 
@@ -71,6 +80,13 @@ public struct ExifMetadata: Sendable {
         district: String? = nil,
         title: String? = nil,
         description: String? = nil,
+        gpsSource: String? = nil,
+        gpsMatchMethod: String? = nil,
+        interpolateWindow: String? = nil,
+        processor: String? = nil,
+        processedDate: String? = nil,
+        geocodeSource: String? = nil,
+        sidecarPath: String? = nil,
         rawTags: [ExifTagItem] = []
     ) {
         self.filePath = filePath
@@ -96,11 +112,24 @@ public struct ExifMetadata: Sendable {
         self.district = district
         self.title = title
         self.description = description
+        self.gpsSource = gpsSource
+        self.gpsMatchMethod = gpsMatchMethod
+        self.interpolateWindow = interpolateWindow
+        self.processor = processor
+        self.processedDate = processedDate
+        self.geocodeSource = geocodeSource
+        self.sidecarPath = sidecarPath
         self.rawTags = rawTags
     }
 
     public var hasGPS: Bool {
         latitude != nil && longitude != nil
+    }
+
+    public var hasProvenance: Bool {
+        (gpsSource != nil && !gpsSource!.isEmpty) ||
+        (processor != nil && !processor!.isEmpty) ||
+        (gpsMatchMethod != nil && !gpsMatchMethod!.isEmpty)
     }
 
     public var cameraSummary: String {
@@ -176,7 +205,7 @@ public struct ExifMetadata: Sendable {
 
         let make = strVal("camera_make", "EXIF:Make", "Make")
         let model = strVal("camera_model", "EXIF:Model", "Model")
-        let lens = strVal("lens_model", "EXIF:LensModel", "XMP:LensModel", "Composite:LensSpec", "LensModel")
+        let lens = strVal("lens_model", "EXIF:LensModel", "XMP:LensModel", "MakerNotes:Lens", "MakerNotes:LensType", "LensModel", "Composite:LensSpec", "Composite:LensID", "Lens")
         let date = strVal("date_time_original", "EXIF:DateTimeOriginal", "XMP:DateTimeOriginal", "DateTimeOriginal")
         let exposure = strVal("exposure_time", "EXIF:ExposureTime", "ExposureTime")
         let fNumber = strVal("f_number", "EXIF:FNumber", "FNumber")
@@ -184,17 +213,25 @@ public struct ExifMetadata: Sendable {
         let focal = strVal("focal_length", "EXIF:FocalLength", "FocalLength")
         let program = strVal("exposure_program", "EXIF:ExposureProgram", "ExposureProgram")
 
-        let lat = doubleVal("latitude", "Composite:GPSLatitude", "GPS:GPSLatitude", "GPSLatitude")
-        let lon = doubleVal("longitude", "Composite:GPSLongitude", "GPS:GPSLongitude", "GPSLongitude")
-        let alt = doubleVal("altitude", "Composite:GPSAltitude", "GPS:GPSAltitude", "GPSAltitude")
+        let lat = doubleVal("latitude", "Composite:GPSLatitude", "GPS:GPSLatitude", "GPSLatitude", "XMP:GPSLatitude")
+        let lon = doubleVal("longitude", "Composite:GPSLongitude", "GPS:GPSLongitude", "GPSLongitude", "XMP:GPSLongitude")
+        let alt = doubleVal("altitude", "Composite:GPSAltitude", "GPS:GPSAltitude", "GPSAltitude", "XMP:GPSAltitude")
         let pos = strVal("gps_position", "Composite:GPSPosition", "GPSPosition")
 
-        let country = strVal("country", "XMP:Country", "IPTC:Country-PrimaryLocationName", "Country")
-        let province = strVal("province", "XMP:State", "IPTC:Province-State", "State", "Province")
-        let city = strVal("city", "XMP:City", "IPTC:City", "City")
-        let district = strVal("district", "XMP:Location", "IPTC:Sub-location", "District", "Location")
+        let country = strVal("country", "XMP:Country", "XMP-photoshop:Country", "IPTC:Country-PrimaryLocationName", "Country")
+        let province = strVal("province", "XMP:State", "XMP-photoshop:State", "IPTC:Province-State", "State", "Province")
+        let city = strVal("city", "XMP:City", "XMP-photoshop:City", "IPTC:City", "City")
+        let district = strVal("district", "XMP:Location", "XMP-iptcCore:Location", "IPTC:Sub-location", "District", "Location")
         let title = strVal("title", "XMP:Title", "IPTC:ObjectName", "Title")
         let desc = strVal("description", "XMP:Description", "IPTC:Caption-Abstract", "Description")
+
+        let gpsSource = strVal("gps_source", "XMP-photools:GPSSource", "GPSSource")
+        let gpsMatchMethod = strVal("gps_match_method", "XMP-photools:GPSMatchMethod", "GPSMatchMethod")
+        let interpolateWindow = strVal("interpolate_window", "XMP-photools:InterpolateWindow", "InterpolateWindow")
+        let processor = strVal("processor", "XMP-photools:Processor", "Processor", "XMP:CreatorTool", "CreatorTool")
+        let processedDate = strVal("processed_date", "XMP-photools:ProcessedDate", "ProcessedDate", "XMP:MetadataDate", "MetadataDate")
+        let geocodeSource = strVal("geocode_source")
+        let sidecarPath = strVal("sidecar_path")
 
         var tags: [ExifTagItem] = []
         if let rawTagList = dict["raw_tags"] as? [[String: Any]] {
@@ -241,6 +278,13 @@ public struct ExifMetadata: Sendable {
             district: district,
             title: title,
             description: desc,
+            gpsSource: gpsSource,
+            gpsMatchMethod: gpsMatchMethod,
+            interpolateWindow: interpolateWindow,
+            processor: processor,
+            processedDate: processedDate,
+            geocodeSource: geocodeSource,
+            sidecarPath: sidecarPath,
             rawTags: tags
         )
     }

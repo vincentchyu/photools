@@ -317,6 +317,33 @@ func TestModel_TabCompletion(t *testing.T) {
 	}
 }
 
+func TestModel_GlobalSettings_SidecarOnly(t *testing.T) {
+	tempDir := t.TempDir()
+	m := InitialModel(tempDir)
+	m.state = stateGlobalSettings
+	m.globalFocusIdx = 2 // 聚焦在 SidecarOnly 开关 (第 3 项)
+	m.sidecarOnly = false
+
+	// 按空格键切换开关
+	newM, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}})
+	model := newM.(Model)
+
+	if !model.sidecarOnly {
+		t.Errorf("按空格键后期望 sidecarOnly 为 true，实际为 false")
+	}
+
+	// 按 Enter 保存生效
+	newM, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = newM.(Model)
+
+	if !model.sessionConfig.Global.SidecarOnly {
+		t.Errorf("按 Enter 后期望 sessionConfig.Global.SidecarOnly 为 true")
+	}
+	if model.state != stateMenu {
+		t.Errorf("保存后期望返回 stateMenu")
+	}
+}
+
 func TestModel_EventStreamContinuity(t *testing.T) {
 	tempDir := t.TempDir()
 	m := InitialModel(tempDir)

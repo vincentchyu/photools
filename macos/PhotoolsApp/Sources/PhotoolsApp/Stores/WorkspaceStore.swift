@@ -107,6 +107,8 @@ public final class WorkspaceStore: ObservableObject {
         }
     }
     @Published public var inPlace: Bool
+    @Published public var sidecarPolicy: String
+    @Published public var companionExtensions: String
     @Published public var gpxDirectory: String
     @Published public var rawExtensions: String
     @Published public var workers: Int
@@ -219,6 +221,9 @@ public final class WorkspaceStore: ObservableObject {
         self.gpxDirectory = UserDefaults.standard.string(forKey: "gpxDirectory") ?? defaultGPX
 
         self.inPlace = UserDefaults.standard.bool(forKey: "inPlace")
+        let savedPolicy = UserDefaults.standard.string(forKey: "sidecarPolicy") ?? "smart"
+        self.sidecarPolicy = (savedPolicy == "read_only") ? "smart" : savedPolicy
+        self.companionExtensions = UserDefaults.standard.string(forKey: "companionExtensions") ?? "wav,acr,exf"
         self.rawExtensions = UserDefaults.standard.string(forKey: "rawExtensions") ?? "nef,cr3,arw,dng,raf,rw2,orf"
         
         let savedWorkers = UserDefaults.standard.integer(forKey: "workers")
@@ -340,6 +345,8 @@ public final class WorkspaceStore: ObservableObject {
         UserDefaults.standard.set(processedDirectory, forKey: "processedDirectory")
         UserDefaults.standard.set(flatMode, forKey: "flatMode")
         UserDefaults.standard.set(inPlace, forKey: "inPlace")
+        UserDefaults.standard.set(sidecarPolicy, forKey: "sidecarPolicy")
+        UserDefaults.standard.set(companionExtensions, forKey: "companionExtensions")
         UserDefaults.standard.set(rawExtensions, forKey: "rawExtensions")
         UserDefaults.standard.set(workers, forKey: "workers")
 
@@ -476,6 +483,8 @@ public final class WorkspaceStore: ObservableObject {
             gpxDirectory: gpxDir,
             processedDirectory: effectiveProcessedDirectory,
             flatMode: flatMode,
+            sidecarPolicy: sidecarPolicy,
+            companionExtensions: companionExtensions,
             inPlace: inPlace,
             geosync: geosync,
             rawExtensions: rawExtensions,
@@ -576,6 +585,8 @@ public final class WorkspaceStore: ObservableObject {
                 gpxDirectory: gpxDir,
                 processedDirectory: effectiveProcessedDirectory,
                 flatMode: flatMode,
+                sidecarPolicy: sidecarPolicy,
+                companionExtensions: companionExtensions,
                 inPlace: inPlace,
                 geosync: geosync,
                 rawExtensions: rawExtensions,

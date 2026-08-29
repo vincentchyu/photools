@@ -94,3 +94,11 @@ func (a AssetGroup) DisplayName() string {
 	}
 	return a.BaseName
 }
+
+// SidecarPathFor 返回指定媒体文件对应的 XMP 侧车文件路径（如 DSC_001.nef -> DSC_001.nef.xmp）
+func (a AssetGroup) SidecarPathFor(mediaPath string) string {
+	if mediaPath == "" {
+		return ""
+	}
+	return mediaPath + ".xmp"
+}

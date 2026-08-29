@@ -1,14 +1,16 @@
 package domain
 
-// IssueKind 定义待处理项或失败分类
-type IssueKind string
+import "github.com/vincentchyu/photools/common"
+
+// IssueKind 定义待处理项或失败分类 (指向 common.IssueKind)
+type IssueKind = common.IssueKind
 
 const (
-	IssueKindMissingPair IssueKind = "missing_pair" // 缺少同名配对 JPG
-	IssueKindTrackGap    IssueKind = "track_gap"    // 拍摄时间未在 GPX 轨迹范围内
-	IssueKindFailure     IssueKind = "failure"      // 元数据解析或写入失败
-	IssueKindMissingDate IssueKind = "missing_date" // 无法读取拍摄日期
-	IssueKindConflict    IssueKind = "conflict"     // 归档目标目录已存在同名冲突文件
+	IssueKindMissingPair = common.IssueKindMissingPair
+	IssueKindTrackGap    = common.IssueKindTrackGap
+	IssueKindFailure     = common.IssueKindFailure
+	IssueKindMissingDate = common.IssueKindMissingDate
+	IssueKindConflict    = common.IssueKindConflict
 )
 
 // Issue 记录单个资产组的异常详情与改进建议

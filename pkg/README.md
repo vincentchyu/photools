@@ -28,8 +28,8 @@ pkg/
 
 ```bash
 go work init
-go work use /Users/vincent/Pictures/GPS
-go work use /path/to/your/project
+go work use ./photools
+go work use ./your-project
 ```
 
 ### 方式 B：在 `go.mod` 中使用 `replace`
@@ -42,7 +42,7 @@ require (
     github.com/vincentchyu/photools v0.0.0
 )
 
-replace github.com/vincentchyu/photools => /Users/vincent/Pictures/GPS
+replace github.com/vincentchyu/photools => ../photools
 ```
 
 ---

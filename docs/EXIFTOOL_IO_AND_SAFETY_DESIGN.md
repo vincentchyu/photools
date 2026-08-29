@@ -98,7 +98,7 @@ exiftool -overwrite_original -P \
 exiftool -overwrite_original -P \
   -charset UTF8 -codedcharacterset=utf8 \
   -XMP-photoshop:Country="中国" -IPTC:Country-PrimaryLocationName="中国" \
-  -XMP-iptcCore:CountryCode="CN" -IPTC:Country-PrimaryLocationCode="CN" \
+  -XMP-iptcCore:CountryCode="CN" -IPTC:Country-PrimaryLocationCode="CHN" \
   -XMP-photoshop:State="北京市" -IPTC:Province-State="北京市" \
   -XMP-photoshop:City="东城区" -IPTC:City="东城区" \
   TARGET_PHOTO.RAW

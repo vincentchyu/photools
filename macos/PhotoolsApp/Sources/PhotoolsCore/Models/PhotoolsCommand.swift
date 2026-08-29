@@ -20,6 +20,8 @@ public struct PipelineRunOptions: Equatable, Sendable {
     public var gpxDirectory: String
     public var processedDirectory: String
     public var flatMode: Bool
+    public var sidecarPolicy: String
+    public var companionExtensions: String
     public var inPlace: Bool
     public var geosync: String
     public var rawExtensions: String
@@ -39,6 +41,8 @@ public struct PipelineRunOptions: Equatable, Sendable {
         gpxDirectory: String = "",
         processedDirectory: String = "",
         flatMode: Bool = false,
+        sidecarPolicy: String = "smart",
+        companionExtensions: String = "wav,acr,exf",
         inPlace: Bool = false,
         geosync: String = "0",
         rawExtensions: String = "nef,cr3,arw,dng,raf,rw2,orf",
@@ -57,6 +61,8 @@ public struct PipelineRunOptions: Equatable, Sendable {
         self.gpxDirectory = gpxDirectory
         self.processedDirectory = processedDirectory
         self.flatMode = flatMode
+        self.sidecarPolicy = sidecarPolicy
+        self.companionExtensions = companionExtensions
         self.inPlace = inPlace
         self.geosync = geosync
         self.rawExtensions = rawExtensions
@@ -130,6 +136,12 @@ public struct PhotoolsCommand: Equatable, Sendable {
 
         if options.flatMode {
             args.append("-flat")
+        }
+        if !options.sidecarPolicy.isEmpty {
+            args.append(contentsOf: ["-sidecar-policy", options.sidecarPolicy])
+        }
+        if !options.companionExtensions.isEmpty {
+            args.append(contentsOf: ["-companion-exts", options.companionExtensions])
         }
         if options.inPlace {
             args.append("-in-place")

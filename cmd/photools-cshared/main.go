@@ -40,6 +40,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -66,23 +67,26 @@ var (
 
 // PipelineOptionsJSON 定义通过 C 接口传递的流水线配置结构
 type PipelineOptionsJSON struct {
-	BaseDir           string `json:"base_dir"`
-	SourceDir         string `json:"source_dir"`
-	GPXDir            string `json:"gpx_dir"`
-	ProcessedDir      string `json:"processed_dir"`
-	FlatMode          bool   `json:"flat_mode"`
-	InPlace           bool   `json:"in_place"`
-	Geosync           string `json:"geosync"`
-	RawExtensions     string `json:"raw_extensions"`
-	Workers           int    `json:"workers"`
-	EnableGPXMatch    bool   `json:"enable_gpx_match"`
-	EnableInterpolate bool   `json:"enable_interpolate"`
-	InterpolateWindow string `json:"interpolate_window"`
-	EnableGeocode     bool   `json:"enable_geocode"`
-	AllowNoGPS        bool   `json:"allow_no_gps"`
-	EnableArchive     bool   `json:"enable_archive"`
-	TestBackup        bool   `json:"test_backup"`
-	BackupDir         string `json:"backup_dir"`
+	BaseDir             string `json:"base_dir"`
+	SourceDir           string `json:"source_dir"`
+	GPXDir              string `json:"gpx_dir"`
+	ProcessedDir        string `json:"processed_dir"`
+	FlatMode            bool   `json:"flat_mode"`
+	SidecarPolicy       string `json:"sidecar_policy"`
+	SidecarOnly         bool   `json:"sidecar_only"`
+	CompanionExtensions string `json:"companion_extensions"`
+	InPlace             bool   `json:"in_place"`
+	Geosync             string `json:"geosync"`
+	RawExtensions       string `json:"raw_extensions"`
+	Workers             int    `json:"workers"`
+	EnableGPXMatch      bool   `json:"enable_gpx_match"`
+	EnableInterpolate   bool   `json:"enable_interpolate"`
+	InterpolateWindow   string `json:"interpolate_window"`
+	EnableGeocode       bool   `json:"enable_geocode"`
+	AllowNoGPS          bool   `json:"allow_no_gps"`
+	EnableArchive       bool   `json:"enable_archive"`
+	TestBackup          bool   `json:"test_backup"`
+	BackupDir           string `json:"backup_dir"`
 }
 
 //export Photools_Init
@@ -167,28 +171,48 @@ func Photools_RunPipeline(optionsJSON *C.char, eventCB C.Photools_EventCallback,
 			win = 15 * time.Minute
 		}
 
+		policy := string(domain.NormalizePolicy(opts.SidecarPolicy))
+		if opts.SidecarPolicy == "" && opts.SidecarOnly {
+			policy = string(domain.PolicySidecarOnly)
+		}
+		var compExts []string
+		if opts.CompanionExtensions != "" {
+			fields := strings.FieldsFunc(opts.CompanionExtensions, func(r rune) bool {
+				return r == ',' || r == ' ' || r == ';'
+			})
+			for _, p := range fields {
+				c := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(p)), ".")
+				if c != "" {
+					compExts = append(compExts, c)
+				}
+			}
+		}
+
 		pluginsCfg, _ := config.LoadPluginsConfig("")
 		sessionCfg := config.NewSessionConfig(pluginsCfg, opts.BaseDir)
 
 		task, err := pipeline.Build(pipeline.PipelineOptions{
-			BaseDir:           opts.BaseDir,
-			SourceDir:         opts.SourceDir,
-			GPXDir:            opts.GPXDir,
-			ProcessedDir:      opts.ProcessedDir,
-			FlatMode:          opts.FlatMode,
-			InPlaceArchive:    opts.InPlace,
-			Geosync:           opts.Geosync,
-			RawExtensions:     sessionCfg.Global.RawExtensions,
-			Workers:           opts.Workers,
-			EnableGPXMatch:    opts.EnableGPXMatch,
-			EnableInterpolate: opts.EnableInterpolate,
-			InterpolateWindow: win,
-			EnableGeocode:     opts.EnableGeocode,
-			AllowNoGPS:        opts.AllowNoGPS,
-			EnableArchive:     opts.EnableArchive,
-			EnableBackup:      opts.TestBackup,
-			BackupDir:         opts.BackupDir,
-			Session:           sessionCfg,
+			BaseDir:             opts.BaseDir,
+			SourceDir:           opts.SourceDir,
+			GPXDir:              opts.GPXDir,
+			ProcessedDir:        opts.ProcessedDir,
+			FlatMode:            opts.FlatMode,
+			SidecarPolicy:       policy,
+			SidecarOnly:         policy == string(domain.PolicySidecarOnly),
+			CompanionExtensions: compExts,
+			InPlaceArchive:      opts.InPlace,
+			Geosync:             opts.Geosync,
+			RawExtensions:       sessionCfg.Global.RawExtensions,
+			Workers:             opts.Workers,
+			EnableGPXMatch:      opts.EnableGPXMatch,
+			EnableInterpolate:   opts.EnableInterpolate,
+			InterpolateWindow:   win,
+			EnableGeocode:       opts.EnableGeocode,
+			AllowNoGPS:          opts.AllowNoGPS,
+			EnableArchive:       opts.EnableArchive,
+			EnableBackup:        opts.TestBackup,
+			BackupDir:           opts.BackupDir,
+			Session:             sessionCfg,
 		})
 
 		if err != nil {

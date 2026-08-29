@@ -131,6 +131,9 @@ _photools() {
                         '-gpx-dir[GPX 轨迹文件存放目录 (默认 ~/.config/gpx)]:轨迹目录:_files -/' \
                         '-processed-dir[归档分类存放的目标根目录 (默认 Processed)]:目标目录:_files -/' \
                         '-flat[扁平原地模式 (直接扫描并就地处理/保存)]' \
+                        '-sidecar-policy[侧车写入策略]:策略:((smart\:"智能分层模式:GPS写RAW/XMP写地名/JPG全嵌(推荐)" sidecar_only\:"纯XMP侧车模式" embed_and_sidecar\:"原图与XMP双写同步" embed_only\:"纯原图内嵌写入"))' \
+                        '-sidecar-only[仅生成/修改 {file}.xmp 侧车文件 (等价于 -sidecar-policy=sidecar_only)]' \
+                        '-companion-exts[伴随文件扩展名白名单 (如 wav, acr, exf)]:扩展名列表:' \
                         '-in-place[原地规范重命名归档，不建立 YYYY/MMDD 子目录]' \
                         '-geosync[相机与 GPS 轨迹的时间偏差补偿值 (如 +00:00:05 或 -00:01:00)]:时间偏移 (+/-HH:MM:SS):' \
                         '-raw-exts[可识别的 RAW 扩展名列表 (逗号分隔)]:RAW格式:_photools_raw_exts' \
@@ -142,6 +145,7 @@ _photools() {
                         '-test[开启测试备份模式 (处理前自动备份 Inbox 到 Inbox_bak)]' \
                         '-backup[同 -test，处理前备份原始文件]' \
                         '-backup-dir[自定义测试快照备份的存放目录]:备份目录:_files -/' \
+                        '-log-dir[日志与待补清单报告存放目录 (默认 ~/.logs/photools)]:日志目录:_files -/' \
                         '-workers[并发处理照片资产组的 Worker 协程数量]:并发数:'
                     ;;
                 geocode)
@@ -150,11 +154,15 @@ _photools() {
                         '-source-dir[待处理照片输入目录]:源目录:_files -/' \
                         '-base-dir[基础工作根目录]:工作目录:_files -/' \
                         '-flat[扁平模式 (在当前目录下直接处理)]' \
+                        '-sidecar-policy[侧车写入策略]:策略:((smart\:"智能分层模式:GPS写RAW/XMP写地名/JPG全嵌(推荐)" sidecar_only\:"纯XMP侧车模式" embed_and_sidecar\:"原图与XMP双写同步" embed_only\:"纯原图内嵌写入"))' \
+                        '-sidecar-only[仅生成/修改 {file}.xmp 侧车文件 (等价于 -sidecar-policy=sidecar_only)]' \
+                        '-companion-exts[伴随文件扩展名白名单 (如 wav, acr, exf)]:扩展名列表:' \
                         '-raw-exts[可识别的 RAW 扩展名列表 (逗号分隔)]:RAW格式:_photools_raw_exts' \
                         '-allow-no-gps[无 GPS 坐标时允许跳过地名写入直接归档]' \
                         '-test[开启测试备份模式 (处理前自动备份到 Inbox_bak)]' \
                         '-backup[同 -test，处理前备份原始文件]' \
                         '-backup-dir[自定义测试快照备份的存放目录]:备份目录:_files -/' \
+                        '-log-dir[日志与待补清单报告存放目录 (默认 ~/.logs/photools)]:日志目录:_files -/' \
                         '-workers[并发处理照片资产组的 Worker 协程数量]:并发数:'
                     ;;
                 pipeline)
@@ -164,6 +172,9 @@ _photools() {
                         '-gpx-dir[GPX 轨迹文件存放目录 (默认 ~/.config/gpx)]:轨迹目录:_files -/' \
                         '-processed-dir[归档分类存放的目标根目录 (默认 Processed)]:目标目录:_files -/' \
                         '-flat[扁平原地模式 (忽略 Inbox/Processed 分层，直接扫描并就地处理/保存)]' \
+                        '-sidecar-policy[侧车写入策略]:策略:((smart\:"智能分层模式:GPS写RAW/XMP写地名/JPG全嵌(推荐)" sidecar_only\:"纯XMP侧车模式" embed_and_sidecar\:"原图与XMP双写同步" embed_only\:"纯原图内嵌写入"))' \
+                        '-sidecar-only[仅生成/修改 {file}.xmp 侧车文件 (等价于 -sidecar-policy=sidecar_only)]' \
+                        '-companion-exts[伴随文件扩展名白名单 (如 wav, acr, exf)]:扩展名列表:' \
                         '-in-place[原地规范重命名，不建立 YYYY/MMDD 子目录]' \
                         '-geosync[相机与 GPS 轨迹的时间偏差补偿值 (如 +00:00:05)]:时间偏移 (+/-HH:MM:SS):' \
                         '-raw-exts[可识别的 RAW 扩展名列表 (逗号分隔)]:RAW格式:_photools_raw_exts' \
@@ -176,7 +187,8 @@ _photools() {
                         '-archive[启用能力 3: 拍摄日期归档与规范重命名]:选项:((true\:"启用" false\:"跳过"))' \
                         '-test[开启测试备份模式 (处理前自动备份 Inbox 到 Inbox_bak)]' \
                         '-backup[同 -test，处理前备份原始文件]' \
-                        '-backup-dir[自定义测试快照备份的存放目录]:备份目录:_files -/'
+                        '-backup-dir[自定义测试快照备份的存放目录]:备份目录:_files -/' \
+                        '-log-dir[日志与待补清单报告存放目录 (默认 ~/.logs/photools)]:日志目录:_files -/'
                     ;;
                 organize-by-date)
                     _arguments -s \
@@ -188,6 +200,7 @@ _photools() {
                         '-test[开启测试备份模式 (处理前自动备份)]' \
                         '-backup[同 -test，处理前备份原始文件]' \
                         '-backup-dir[自定义测试快照备份的存放目录]:备份目录:_files -/' \
+                        '-log-dir[日志与待补清单报告存放目录 (默认 ~/.logs/photools)]:日志目录:_files -/' \
                         '-geocode[对已有 GPS 照片补充逆地理编码地名]:选项:((true\:"启用地名补充" false\:"不修改地名"))'
                     ;;
                 restore-test|restore-backup)
@@ -245,17 +258,17 @@ func GenerateBash(w io.Writer) {
             ;;
         geotag)
             if [[ "$cur" == -* ]]; then
-                COMPREPLY=( $(compgen -W "-base-dir -source-dir -gpx-dir -processed-dir -flat -in-place -geosync -raw-exts -template -geocode -interpolate -interpolate-window -allow-no-gps -workers -test -backup -backup-dir" -- "${cur}") )
+                COMPREPLY=( $(compgen -W "-base-dir -source-dir -gpx-dir -processed-dir -flat -sidecar-policy -sidecar-only -companion-exts -in-place -geosync -raw-exts -template -geocode -interpolate -interpolate-window -allow-no-gps -workers -test -backup -backup-dir" -- "${cur}") )
             fi
             ;;
         geocode)
             if [[ "$cur" == -* ]]; then
-                COMPREPLY=( $(compgen -W "-dir -source-dir -base-dir -flat -raw-exts -allow-no-gps -workers -test -backup -backup-dir" -- "${cur}") )
+                COMPREPLY=( $(compgen -W "-dir -source-dir -base-dir -flat -sidecar-policy -sidecar-only -companion-exts -raw-exts -allow-no-gps -workers -test -backup -backup-dir" -- "${cur}") )
             fi
             ;;
         pipeline)
             if [[ "$cur" == -* ]]; then
-                COMPREPLY=( $(compgen -W "-base-dir -source-dir -gpx-dir -processed-dir -flat -in-place -geosync -raw-exts -workers -gpx -interpolate -interpolate-window -geocode -allow-no-gps -archive -test -backup -backup-dir" -- "${cur}") )
+                COMPREPLY=( $(compgen -W "-base-dir -source-dir -gpx-dir -processed-dir -flat -sidecar-policy -sidecar-only -companion-exts -in-place -geosync -raw-exts -workers -gpx -interpolate -interpolate-window -geocode -allow-no-gps -archive -test -backup -backup-dir" -- "${cur}") )
             fi
             ;;
         organize-by-date)
@@ -312,7 +325,41 @@ complete -c photools -n "__fish_seen_subcommand_from geotag" -l source-dir -d "�
 complete -c photools -n "__fish_seen_subcommand_from geotag" -l gpx-dir -d "GPX 轨迹文件存放目录 (默认 ~/.config/gpx)"
 complete -c photools -n "__fish_seen_subcommand_from geotag" -l processed-dir -d "归档目标根目录"
 complete -c photools -n "__fish_seen_subcommand_from geotag" -l flat -d "扁平原地模式 (直接扫描并就地处理/保存)"
+complete -c photools -n "__fish_seen_subcommand_from geotag" -l sidecar-policy -d "侧车写入策略 (smart/sidecar_only/embed_and_sidecar/embed_only)"
+complete -c photools -n "__fish_seen_subcommand_from geotag" -l sidecar-only -d "仅生成/修改 {file}.xmp 侧车文件，不修改原始 RAW/JPG 文件"
+complete -c photools -n "__fish_seen_subcommand_from geotag" -l companion-exts -d "伴随文件扩展名白名单 (如 wav, acr, exf)"
 complete -c photools -n "__fish_seen_subcommand_from geotag" -l in-place -d "原地规范重命名归档，不建立 YYYY/MMDD 子目录"
+complete -c photools -n "__fish_seen_subcommand_from geotag" -l geosync -d "相机与 GPS 轨迹的时间偏差补偿值"
+complete -c photools -n "__fish_seen_subcommand_from geotag" -l interpolate -d "启用根据前后照片时间推算补全 GPS"
+complete -c photools -n "__fish_seen_subcommand_from geotag" -l interpolate-window -d "智能推算最大时间窗口 (如 15m, 30m, 1h)"
+complete -c photools -n "__fish_seen_subcommand_from geotag" -l allow-no-gps -d "无 GPS 照片允许跳过地名写入直接归档"
+complete -c photools -n "__fish_seen_subcommand_from geotag" -l raw-exts -d "可识别的 RAW 扩展名列表"
+complete -c photools -n "__fish_seen_subcommand_from geotag" -l workers -d "并发处理 Worker 协程数量"
+complete -c photools -n "__fish_seen_subcommand_from geotag" -l test -d "开启测试备份模式"
+complete -c photools -n "__fish_seen_subcommand_from geotag" -l backup -d "同 -test，处理前备份原始文件"
+
+# geocode 选项
+complete -c photools -n "__fish_seen_subcommand_from geocode" -l dir -d "待处理照片输入目录"
+complete -c photools -n "__fish_seen_subcommand_from geocode" -l source-dir -d "待处理照片输入目录"
+complete -c photools -n "__fish_seen_subcommand_from geocode" -l base-dir -d "基础工作根目录"
+complete -c photools -n "__fish_seen_subcommand_from geocode" -l flat -d "扁平模式 (在当前目录下直接处理)"
+complete -c photools -n "__fish_seen_subcommand_from geocode" -l sidecar-policy -d "侧车写入策略 (read_only/sidecar_only/embed_and_sidecar/embed_only)"
+complete -c photools -n "__fish_seen_subcommand_from geocode" -l sidecar-only -d "仅生成/修改 {file}.xmp 侧车文件，不修改原始 RAW/JPG 文件"
+complete -c photools -n "__fish_seen_subcommand_from geocode" -l companion-exts -d "伴随文件扩展名白名单 (如 wav, acr, exf)"
+complete -c photools -n "__fish_seen_subcommand_from geocode" -l raw-exts -d "可识别的 RAW 扩展名列表"
+complete -c photools -n "__fish_seen_subcommand_from geocode" -l allow-no-gps -d "无 GPS 照片允许跳过地名写入直接归档"
+complete -c photools -n "__fish_seen_subcommand_from geocode" -l workers -d "并发处理 Worker 协程数量"
+
+# pipeline 选项
+complete -c photools -n "__fish_seen_subcommand_from pipeline" -l base-dir -d "工作根目录"
+complete -c photools -n "__fish_seen_subcommand_from pipeline" -l source-dir -d "待处理照片原始输入目录"
+complete -c photools -n "__fish_seen_subcommand_from pipeline" -l gpx-dir -d "GPX 轨迹文件存放目录 (默认 ~/.config/gpx)"
+complete -c photools -n "__fish_seen_subcommand_from pipeline" -l processed-dir -d "归档目标根目录"
+complete -c photools -n "__fish_seen_subcommand_from pipeline" -l flat -d "扁平原地模式 (直接扫描并就地处理/保存)"
+complete -c photools -n "__fish_seen_subcommand_from pipeline" -l sidecar-policy -d "侧车写入策略 (smart/sidecar_only/embed_and_sidecar/embed_only)"
+complete -c photools -n "__fish_seen_subcommand_from pipeline" -l sidecar-only -d "仅生成/修改 {file}.xmp 侧车文件，不修改原始 RAW/JPG 文件"
+complete -c photools -n "__fish_seen_subcommand_from pipeline" -l companion-exts -d "伴随文件扩展名白名单 (如 wav, acr, exf)"
+complete -c photools -n "__fish_seen_subcommand_from pipeline" -l in-place -d "原地规范重命名，不建立 YYYY/MMDD 子目录"
 complete -c photools -n "__fish_seen_subcommand_from geotag" -l geosync -d "相机与 GPS 轨迹的时间偏差补偿值"
 complete -c photools -n "__fish_seen_subcommand_from geotag" -l interpolate -d "启用根据前后照片时间推算补全 GPS"
 complete -c photools -n "__fish_seen_subcommand_from geotag" -l interpolate-window -d "智能推算最大时间窗口 (如 15m, 30m, 1h)"

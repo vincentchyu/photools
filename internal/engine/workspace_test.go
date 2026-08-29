@@ -20,7 +20,6 @@ func TestEnsureStandardDirectories(t *testing.T) {
 		customGPX,
 		filepath.Join(tempDir, "Processed", "geotag"),
 		filepath.Join(tempDir, "Processed", "organize"),
-		filepath.Join(tempDir, "Logs"),
 	}
 
 	for _, d := range expectedDirs {

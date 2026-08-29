@@ -54,9 +54,12 @@ graph TD
 
 | 配置项 | 类型 | 默认值 | 作用说明 |
 | :--- | :--- | :--- | :--- |
-| **`BaseDir`** | `string` | `~/Pictures/GPS` | 工作区根目录，用于定位默认的 `Inbox/`、`GPX/`、`Processed/` 与 `Logs/` |
+| **`BaseDir`** | `string` | `~/Pictures/GPS` | 工作区根目录，用于定位默认的 `Inbox/`、`GPX/` 与 `Processed/` |
 | **`SourceDir`** | `string` | `<BaseDir>/Inbox` | 当前批次照片扫描源路径，支持指定任意外部磁盘目录 |
+| **`LogDir`** | `string` | `~/.logs/photools` | 全局日志与待补清单报告输出目录，杜绝在工作区产生 `Logs/` 垃圾文件 |
+| **`GPXDir`** | `string` | `~/.config/gpx` | GPX 轨迹文件统一存放目录 |
 | **`FlatMode`** | `bool` | `false` | 扁平直接目录模式：忽略分层，就地扫描并就地打标/原地重命名 |
+| **`SidecarPolicy`** | `string` | `smart` | 智能元数据分层模式（`smart`/`sidecar_only`/`embed_and_sidecar`/`embed_only`） |
 | **`AllowNoGPS`** | `bool` | `false` | 软降级容错：无 GPS 照片在逆地理阶段良性跳过，安全进入拍摄日期归档 |
 | **`RawExtensions`** | `[]string` | `nef, cr3, arw, dng...` | 识别为 RAW 摄影主文件的扩展名列表 |
 | **`Workers`** | `int` | `CPU 核心数` | 并发 Worker 线程池大小 |

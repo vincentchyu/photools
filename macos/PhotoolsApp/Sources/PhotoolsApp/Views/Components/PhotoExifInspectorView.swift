@@ -37,6 +37,11 @@ public struct PhotoExifInspectorView: View {
                 // 3. 地理位置与即时反查预览
                 locationAndGeocodeCard
 
+                // 3.5 元数据溯源与审计指纹 (若有)
+                if let exif = store.selectedAssetExif, exif.hasProvenance {
+                    provenanceAuditCard(exif)
+                }
+
                 // 4. 伴随文件与主资产关系
                 companionFilesCard
 
@@ -356,13 +361,24 @@ public struct PhotoExifInspectorView: View {
 
                         // 2. 已有地名展示
                         if let loc = exif.locationSummary {
-                            HStack(alignment: .top) {
+                            HStack(alignment: .top, spacing: 6) {
                                 Text(lang.text(.writtenLabel))
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                                 Text(loc)
                                     .font(.caption2.weight(.semibold))
                                     .foregroundStyle(.teal)
+
+                                Spacer()
+
+                                if let src = exif.geocodeSource {
+                                    Text(src == "xmp" ? lang.text(.geocodeSourceXMP) : lang.text(.geocodeSourceEmbedded))
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundStyle(src == "xmp" ? Color.indigo : Color.purple)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 1)
+                                        .background((src == "xmp" ? Color.indigo : Color.purple).opacity(0.12), in: Capsule())
+                                }
                             }
                         } else {
                             // 3. 未写入地名：提供即时反查预览按钮
@@ -651,6 +667,129 @@ public struct PhotoExifInspectorView: View {
             return .blue
         case .companionOnly:
             return .secondary
+        }
+    }
+
+    // 元数据溯源与审计指纹卡片
+    private func provenanceAuditCard(_ exif: ExifMetadata) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(lang.text(.provenanceTitle), systemImage: "signature")
+                    .font(.headline)
+                    .foregroundStyle(.indigo)
+                Spacer()
+                Text("photools Provenance")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.indigo)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.indigo.opacity(0.12), in: Capsule())
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                // 坐标来源与算法
+                HStack(alignment: .top, spacing: 14) {
+                    if let src = exif.gpsSource, !src.isEmpty {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(lang.text(.provenanceSourceLabel))
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                            Text(formatGpsSource(src))
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.primary)
+                        }
+                    }
+
+                    if let method = exif.gpsMatchMethod, !method.isEmpty {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(lang.text(.provenanceMethodLabel))
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                            Text(formatMatchMethod(method))
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                Divider()
+
+                // 处理引擎与时间
+                HStack(alignment: .top, spacing: 14) {
+                    if let proc = exif.processor, !proc.isEmpty {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(lang.text(.provenanceProcessorLabel))
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                            Text(proc)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.primary)
+                        }
+                    }
+
+                    if let dt = exif.processedDate, !dt.isEmpty {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(lang.text(.provenanceDateLabel))
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                            Text(dt)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                if let sidecar = exif.sidecarPath, !sidecar.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.text")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.indigo)
+                        Text(lang.text(.sidecarFileLabel) + ":")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                        Text((sidecar as NSString).lastPathComponent)
+                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.indigo)
+                    }
+                    .padding(.top, 2)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.indigo.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.indigo.opacity(0.2), lineWidth: 1)
+        )
+    }
+
+    private func formatGpsSource(_ src: String) -> String {
+        switch src.lowercased() {
+        case "gpx":
+            return lang.text(.gpsSourceGpx)
+        case "interpolated":
+            return lang.text(.gpsSourceInterpolated)
+        case "camera", "original":
+            return lang.text(.gpsSourceCamera)
+        default:
+            return src
+        }
+    }
+
+    private func formatMatchMethod(_ method: String) -> String {
+        switch method.lowercased() {
+        case "time_proximity":
+            return lang.text(.methodTimeProximity)
+        case "spherical_linear_interpolation":
+            return lang.text(.methodSphericalLinear)
+        case "nearest_neighbor_anchor":
+            return lang.text(.methodNearestNeighbor)
+        default:
+            return method
         }
     }
 }

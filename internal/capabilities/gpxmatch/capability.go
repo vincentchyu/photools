@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/vincentchyu/photools/internal/domain"
 	"github.com/vincentchyu/photools/internal/exiftool"
@@ -159,16 +160,8 @@ func (c *Capability) PlanPrecheck(ctx context.Context, actx *domain.AssetContext
 		}
 	}
 
-	if len(c.gpxFiles) == 0 {
-		return domain.CapabilityPlan{
-			CanProcess: false,
-			ActionDesc: "等待 GPX 轨迹文件",
-			Warning:    "未找到任何 GPX 轨迹文件，无法进行时间轴匹配",
-		}
-	}
-
 	meta := actx.GetMetadata()
-	if meta.DateTimeOriginal == "" && !actx.IsMetadataLoaded() {
+	if (meta.DateTimeOriginal == "" || meta.GPSPosition == "") && !actx.IsMetadataLoaded() {
 		m, err := exiftool.ReadMetadata(c.runner, primary)
 		if err != nil {
 			return domain.CapabilityPlan{
@@ -181,6 +174,7 @@ func (c *Capability) PlanPrecheck(ctx context.Context, actx *domain.AssetContext
 		actx.UpdateMetadata(meta)
 	}
 
+	// 1. 检查是否有拍摄时间
 	if meta.DateTimeOriginal == "" {
 		return domain.CapabilityPlan{
 			CanProcess: false,
@@ -189,22 +183,64 @@ func (c *Capability) PlanPrecheck(ctx context.Context, actx *domain.AssetContext
 		}
 	}
 
-	if meta.GPSPosition != "" {
+	// 2. 检查是否有与拍摄日期相匹配的 GPX 轨迹文件
+	candidateGPX := FilterGPXFilesByDate(c.gpxFiles, meta.DateTimeOriginal)
+	if len(candidateGPX) == 0 {
+		if meta.GPSPosition != "" || meta.HasGPS() || actx.HasGPS {
+			return domain.CapabilityPlan{
+				CanProcess: false,
+				ActionDesc: "无对应 GPX 轨迹，安全保留相机自带 GPS",
+				Warning:    "",
+			}
+		}
 		return domain.CapabilityPlan{
-			CanProcess: true,
-			ActionDesc: fmt.Sprintf("校准已有 GPS (%s)", meta.GPSPosition),
+			CanProcess: false,
+			ActionDesc: "等待 GPX 轨迹文件",
+			Warning:    "未找到该拍摄日期的 GPX 轨迹文件，无法进行时间轴匹配",
 		}
 	}
 
-	candidateGPX := FilterGPXFilesByDate(c.gpxFiles, meta.DateTimeOriginal)
 	var gpxNames []string
 	for _, g := range candidateGPX {
 		gpxNames = append(gpxNames, filepath.Base(g))
 	}
+	if meta.GPSPosition != "" || meta.HasGPS() || actx.HasGPS {
+		return domain.CapabilityPlan{
+			CanProcess: true,
+			ActionDesc: fmt.Sprintf("校验相机 GPS 是否漂移 (%s)", strings.Join(gpxNames, ",")),
+		}
+	}
 	return domain.CapabilityPlan{
 		CanProcess: true,
-		ActionDesc: fmt.Sprintf("匹配轨迹 (%s)", strings.Join(gpxNames, ",")),
+		ActionDesc: fmt.Sprintf("匹配轨迹写入 GPS (%s)", strings.Join(gpxNames, ",")),
 	}
+}
+
+func isGPSPositionChanged(oldPos, newPos string) bool {
+	if oldPos == "" && newPos != "" {
+		return true
+	}
+	if oldPos != "" && newPos == "" {
+		return true
+	}
+	if oldPos == "" && newPos == "" {
+		return false
+	}
+	oldLat, oldLon, err1 := exiftool.ParseCoordinates(oldPos)
+	newLat, newLon, err2 := exiftool.ParseCoordinates(newPos)
+	if err1 != nil || err2 != nil {
+		return oldPos != newPos
+	}
+	dLat := oldLat - newLat
+	if dLat < 0 {
+		dLat = -dLat
+	}
+	dLon := oldLon - newLon
+	if dLon < 0 {
+		dLon = -dLon
+	}
+	// 经纬度差大于 0.00001 度（约 1 米）视为发生有效修正
+	return dLat > 0.00001 || dLon > 0.00001
 }
 
 // ExecuteProcess 正式执行 GPX 匹配与 GPS 写入/同步
@@ -214,9 +250,9 @@ func (c *Capability) ExecuteProcess(ctx context.Context, actx *domain.AssetConte
 		return nil
 	}
 
-	// 1. 读取或复用拍摄时间
+	// 1. 读取或复用拍摄时间与原始 GPS 坐标
 	primaryMeta := actx.GetMetadata()
-	if primaryMeta.DateTimeOriginal == "" {
+	if primaryMeta.DateTimeOriginal == "" || (primaryMeta.GPSPosition == "" && !actx.IsMetadataLoaded()) {
 		meta, err := exiftool.ReadMetadata(c.runner, primary)
 		if err != nil {
 			return fmt.Errorf("读取主文件元数据失败: %w", err)
@@ -225,56 +261,227 @@ func (c *Capability) ExecuteProcess(ctx context.Context, actx *domain.AssetConte
 		actx.UpdateMetadata(meta)
 	}
 
+	origGPSPos := primaryMeta.GPSPosition
+
 	// 2. 按拍摄日期智能筛选相关 GPX 轨迹（±1 天容差）
 	targetGPX := FilterGPXFilesByDate(c.gpxFiles, primaryMeta.DateTimeOriginal)
-
-	// 3. 写入主文件 GPS (RAW 或 JPG)
-	output, err := exiftool.WriteGeotag(c.runner, primary, targetGPX, c.geosync)
-	if err != nil {
-		return fmt.Errorf("主文件写入 GPS 失败: %s", exiftool.ClassifyFailure(output, err))
-	}
-
-	// 3. 二次校验主文件 GPSPosition
-	updatedMeta, err := exiftool.ReadMetadata(c.runner, primary)
-	if err != nil || updatedMeta.GPSPosition == "" {
-		return fmt.Errorf("二次校验未检测到 GPSPosition，可能时间未命中轨迹: %s", exiftool.ClassifyFailure(output, err))
-	}
-
-	actx.UpdateMetadata(updatedMeta)
-	if lat, lon, err := exiftool.ParseCoordinates(updatedMeta.GPSPosition); err == nil {
-		actx.SetGPS(lat, lon)
-	}
-	actx.RecordModifiedFile(primary)
-
-	// 4. 若主文件是 RAW 且存在配对的同名 JPG，同步 GPS 经纬度到 JPG
-	if actx.Asset.HasRaw() && actx.Asset.HasJPG() {
-		if err := exiftool.SyncGPSToJPG(c.runner, actx.Asset.RawPath, actx.Asset.JPGPath); err != nil {
-			return fmt.Errorf("同步 GPS 到 JPG 失败: %w", err)
+	if len(targetGPX) == 0 {
+		if origGPSPos != "" {
+			if sendEvent != nil {
+				sendEvent(domain.ProgressEvent{
+					Stage:   domain.StageGeotag,
+					Level:   domain.LevelInfo,
+					Message: fmt.Sprintf("[GPX 轨迹匹配] ⏭️ 无对应 GPX 轨迹，安全保留相机自带 GPS：%s (%s)", actx.Asset.DisplayName(), origGPSPos),
+					Asset:   &actx.Asset,
+				})
+			}
+			return nil
 		}
-		actx.RecordModifiedFile(actx.Asset.JPGPath)
+		return fmt.Errorf("未找到拍摄日期匹配的 GPX 轨迹")
 	}
 
-	// 5. 若存在 XMP，同步 GPS 经纬度到 XMP
-	if actx.Asset.HasXMP() {
-		sourceForXMP := primary
-		if err := exiftool.SyncGPSToXMP(c.runner, sourceForXMP, actx.Asset.XMPPath); err != nil {
-			return fmt.Errorf("同步 GPS 到 XMP 失败: %w", err)
+	// 3. 构造 GPX 匹配溯源指纹
+	prov := domain.GPSProvenance{
+		Source:      domain.GPSSourceGPX,
+		MatchMethod: domain.GPSMatchMethodTimeProximity,
+		Processor:   domain.DefaultProcessorName,
+		Timestamp:   time.Now().Format(time.RFC3339),
+	}
+
+	var trackNames []string
+	for _, g := range targetGPX {
+		trackNames = append(trackNames, filepath.Base(g))
+	}
+	trackInfo := strings.Join(trackNames, ", ")
+
+	// 4. 写入 GPS 坐标（根据 SidecarPolicy 四档策略调度写入目标）
+	switch actx.GetPolicy() {
+	case domain.PolicySidecarOnly:
+		targetXMP := actx.Asset.SidecarPathFor(primary)
+		if actx.Asset.HasXMP() {
+			targetXMP = actx.Asset.XMPPath
 		}
-		actx.RecordModifiedFile(actx.Asset.XMPPath)
+		output, err := exiftool.WriteGeotagToXMP(c.runner, primary, targetXMP, targetGPX, c.geosync)
+		if err != nil {
+			return fmt.Errorf("生成/写入 XMP 侧车文件 GPS 失败: %s", exiftool.ClassifyFailure(output, err))
+		}
+
+		updatedMeta, err := exiftool.ReadMetadata(c.runner, targetXMP)
+		if err != nil || updatedMeta.GPSPosition == "" {
+			return fmt.Errorf("二次校验 XMP 未检测到 GPSPosition，可能时间未命中轨迹: %s", exiftool.ClassifyFailure(output, err))
+		}
+
+		coordsChanged := origGPSPos == "" || isGPSPositionChanged(origGPSPos, updatedMeta.GPSPosition)
+		if !coordsChanged && origGPSPos != "" {
+			if sendEvent != nil {
+				sendEvent(domain.ProgressEvent{
+					Stage:   domain.StageGeotag,
+					Level:   domain.LevelInfo,
+					Message: fmt.Sprintf("[GPX 轨迹匹配] ⏭️ 相机原生 GPS 准确（与轨迹一致），无需校准：%s (%s)", actx.Asset.DisplayName(), origGPSPos),
+					Asset:   &actx.Asset,
+				})
+			}
+			return nil
+		}
+
+		actx.UpdateMetadata(updatedMeta)
+		if lat, lon, err := exiftool.ParseCoordinates(updatedMeta.GPSPosition); err == nil {
+			actx.SetGPSWithProvenance(lat, lon, 0, prov)
+			_ = exiftool.WriteCoordinatesToXMPWithProvenance(c.runner, targetXMP, lat, lon, 0, prov)
+		}
+		actx.RecordModifiedFile(targetXMP)
+
+		if actx.Asset.HasRaw() && actx.Asset.HasJPG() {
+			jpgXMP := actx.Asset.SidecarPathFor(actx.Asset.JPGPath)
+			if jpgXMP != targetXMP {
+				_, _ = exiftool.WriteGeotagToXMP(c.runner, actx.Asset.JPGPath, jpgXMP, targetGPX, c.geosync)
+				actx.RecordModifiedFile(jpgXMP)
+			}
+		}
+
+	case domain.PolicySmart, domain.PolicyReadOnly:
+		if actx.Asset.HasRaw() {
+			output, err := exiftool.WriteGeotag(c.runner, actx.Asset.RawPath, targetGPX, c.geosync)
+			if err != nil {
+				return fmt.Errorf("RAW 写入 GPS 失败: %s", exiftool.ClassifyFailure(output, err))
+			}
+			updatedMeta, err := exiftool.ReadMetadata(c.runner, actx.Asset.RawPath)
+			if err != nil || updatedMeta.GPSPosition == "" {
+				return fmt.Errorf("二次校验 RAW 未检测到 GPSPosition: %s", exiftool.ClassifyFailure(output, err))
+			}
+
+			coordsChanged := origGPSPos == "" || isGPSPositionChanged(origGPSPos, updatedMeta.GPSPosition)
+			if !coordsChanged && origGPSPos != "" {
+				if sendEvent != nil {
+					sendEvent(domain.ProgressEvent{
+						Stage:   domain.StageGeotag,
+						Level:   domain.LevelInfo,
+						Message: fmt.Sprintf("[GPX 轨迹匹配] ⏭️ 相机原生 GPS 准确（与轨迹一致），无需校准：%s (%s)", actx.Asset.DisplayName(), origGPSPos),
+						Asset:   &actx.Asset,
+					})
+				}
+				return nil
+			}
+
+			actx.UpdateMetadata(updatedMeta)
+			if lat, lon, err := exiftool.ParseCoordinates(updatedMeta.GPSPosition); err == nil {
+				actx.SetGPSWithProvenance(lat, lon, 0, prov)
+			}
+			actx.RecordModifiedFile(actx.Asset.RawPath)
+
+			targetXMP := actx.Asset.SidecarPathFor(actx.Asset.RawPath)
+			if actx.Asset.HasXMP() {
+				targetXMP = actx.Asset.XMPPath
+			}
+			if err := exiftool.SyncGPSToXMPWithProvenance(c.runner, actx.Asset.RawPath, targetXMP, prov); err == nil {
+				actx.RecordModifiedFile(targetXMP)
+			}
+
+			if actx.Asset.HasJPG() {
+				if err := exiftool.SyncGPSToJPG(c.runner, actx.Asset.RawPath, actx.Asset.JPGPath); err == nil {
+					actx.RecordModifiedFile(actx.Asset.JPGPath)
+				}
+			}
+		} else {
+			output, err := exiftool.WriteGeotag(c.runner, primary, targetGPX, c.geosync)
+			if err != nil {
+				return fmt.Errorf("JPG 写入 GPS 失败: %s", exiftool.ClassifyFailure(output, err))
+			}
+			updatedMeta, err := exiftool.ReadMetadata(c.runner, primary)
+			if err != nil || updatedMeta.GPSPosition == "" {
+				return fmt.Errorf("二次校验 JPG 未检测到 GPSPosition: %s", exiftool.ClassifyFailure(output, err))
+			}
+
+			coordsChanged := origGPSPos == "" || isGPSPositionChanged(origGPSPos, updatedMeta.GPSPosition)
+			if !coordsChanged && origGPSPos != "" {
+				if sendEvent != nil {
+					sendEvent(domain.ProgressEvent{
+						Stage:   domain.StageGeotag,
+						Level:   domain.LevelInfo,
+						Message: fmt.Sprintf("[GPX 轨迹匹配] ⏭️ 相机原生 GPS 准确（与轨迹一致），无需校准：%s (%s)", actx.Asset.DisplayName(), origGPSPos),
+						Asset:   &actx.Asset,
+					})
+				}
+				return nil
+			}
+
+			actx.UpdateMetadata(updatedMeta)
+			if lat, lon, err := exiftool.ParseCoordinates(updatedMeta.GPSPosition); err == nil {
+				actx.SetGPSWithProvenance(lat, lon, 0, prov)
+			}
+			actx.RecordModifiedFile(primary)
+
+			if actx.Asset.HasXMP() {
+				_ = exiftool.SyncGPSToXMPWithProvenance(c.runner, primary, actx.Asset.XMPPath, prov)
+				actx.RecordModifiedFile(actx.Asset.XMPPath)
+			}
+		}
+
+	case domain.PolicyEmbedAndSidecar, domain.PolicyEmbedOnly:
+		output, err := exiftool.WriteGeotag(c.runner, primary, targetGPX, c.geosync)
+		if err != nil {
+			return fmt.Errorf("主文件写入 GPS 失败: %s", exiftool.ClassifyFailure(output, err))
+		}
+
+		updatedMeta, err := exiftool.ReadMetadata(c.runner, primary)
+		if err != nil || updatedMeta.GPSPosition == "" {
+			return fmt.Errorf("二次校验未检测到 GPSPosition，可能时间未命中轨迹: %s", exiftool.ClassifyFailure(output, err))
+		}
+
+		coordsChanged := origGPSPos == "" || isGPSPositionChanged(origGPSPos, updatedMeta.GPSPosition)
+		if !coordsChanged && origGPSPos != "" {
+			if sendEvent != nil {
+				sendEvent(domain.ProgressEvent{
+					Stage:   domain.StageGeotag,
+					Level:   domain.LevelInfo,
+					Message: fmt.Sprintf("[GPX 轨迹匹配] ⏭️ 相机原生 GPS 准确（与轨迹一致），无需校准：%s (%s)", actx.Asset.DisplayName(), origGPSPos),
+					Asset:   &actx.Asset,
+				})
+			}
+			return nil
+		}
+
+		actx.UpdateMetadata(updatedMeta)
+		if lat, lon, err := exiftool.ParseCoordinates(updatedMeta.GPSPosition); err == nil {
+			actx.SetGPSWithProvenance(lat, lon, 0, prov)
+		}
+		actx.RecordModifiedFile(primary)
+
+		if actx.Asset.HasRaw() && actx.Asset.HasJPG() {
+			if err := exiftool.SyncGPSToJPG(c.runner, actx.Asset.RawPath, actx.Asset.JPGPath); err != nil {
+				return fmt.Errorf("同步 GPS 到 JPG 失败: %w", err)
+			}
+			actx.RecordModifiedFile(actx.Asset.JPGPath)
+		}
+
+		if actx.GetPolicy() == domain.PolicyEmbedAndSidecar || actx.Asset.HasXMP() {
+			targetXMP := actx.Asset.XMPPath
+			if targetXMP == "" {
+				targetXMP = actx.Asset.SidecarPathFor(primary)
+			}
+			if err := exiftool.SyncGPSToXMPWithProvenance(c.runner, primary, targetXMP, prov); err != nil {
+				return fmt.Errorf("同步 GPS 到 XMP 失败: %w", err)
+			}
+			actx.RecordModifiedFile(targetXMP)
+		}
 	}
 
 	if sendEvent != nil {
-		var gpxNames []string
-		for _, g := range targetGPX {
-			gpxNames = append(gpxNames, filepath.Base(g))
+		if origGPSPos != "" {
+			sendEvent(domain.ProgressEvent{
+				Stage:   domain.StageGeotag,
+				Level:   domain.LevelSuccess,
+				Message: fmt.Sprintf("GPS 漂移校准并同步成功：%s (校准前: %s -> 校准后: %s) [匹配轨迹: %s]", actx.Asset.DisplayName(), origGPSPos, actx.GetMetadata().GPSPosition, trackInfo),
+				Asset:   &actx.Asset,
+			})
+		} else {
+			sendEvent(domain.ProgressEvent{
+				Stage:   domain.StageGeotag,
+				Level:   domain.LevelSuccess,
+				Message: fmt.Sprintf("GPS 写入并同步成功：%s (%s) [匹配轨迹: %s]", actx.Asset.DisplayName(), actx.GetMetadata().GPSPosition, trackInfo),
+				Asset:   &actx.Asset,
+			})
 		}
-		trackInfo := strings.Join(gpxNames, ", ")
-		sendEvent(domain.ProgressEvent{
-			Stage:   domain.StageGeotag,
-			Level:   domain.LevelSuccess,
-			Message: fmt.Sprintf("GPS 写入并同步成功：%s (%s) [匹配轨迹: %s]", actx.Asset.DisplayName(), updatedMeta.GPSPosition, trackInfo),
-			Asset:   &actx.Asset,
-		})
 	}
 
 	return nil

@@ -12,11 +12,12 @@ import (
 
 // Discoverer 负责扫描指定目录并聚合 AssetGroup
 type Discoverer struct {
-	rawExtensions map[string]struct{}
+	rawExtensions       map[string]struct{}
+	companionExtensions map[string]struct{}
 }
 
 // NewDiscoverer 创建 Discoverer 实例
-func NewDiscoverer(rawExts []string) *Discoverer {
+func NewDiscoverer(rawExts []string, companionExts ...[]string) *Discoverer {
 	rawMap := make(map[string]struct{}, len(rawExts))
 	for _, ext := range rawExts {
 		clean := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(ext), "."))
@@ -24,19 +25,39 @@ func NewDiscoverer(rawExts []string) *Discoverer {
 			rawMap[clean] = struct{}{}
 		}
 	}
-	return &Discoverer{rawExtensions: rawMap}
+
+	compMap := map[string]struct{}{
+		"wav": {}, "acr": {}, "exf": {},
+	}
+	if len(companionExts) > 0 {
+		for _, ext := range companionExts[0] {
+			clean := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(ext), "."))
+			if clean != "" {
+				compMap[clean] = struct{}{}
+			}
+		}
+	}
+
+	return &Discoverer{
+		rawExtensions:       rawMap,
+		companionExtensions: compMap,
+	}
 }
 
 // 忽略的非摄影/文档/日志等文件扩展名（不作为伴随文件与独立资产处理）
-var ignoredDocExtensions = map[string]struct{}{
+var defaultIgnoredDocExtensions = map[string]struct{}{
 	"md": {}, "log": {}, "txt": {}, "json": {}, "yaml": {}, "yml": {},
 	"csv": {}, "pdf": {}, "doc": {}, "docx": {}, "zip": {}, "tar": {},
 	"gz": {}, "7z": {}, "rar": {}, "bak": {}, "tmp": {}, "ds_store": {},
 	"toml": {}, "sh": {}, "bat": {},
 }
 
-func isIgnoredDocExt(ext string) bool {
-	_, ok := ignoredDocExtensions[strings.ToLower(ext)]
+func (d *Discoverer) isIgnoredDocExt(ext string) bool {
+	lower := strings.ToLower(ext)
+	if _, isComp := d.companionExtensions[lower]; isComp {
+		return false
+	}
+	_, ok := defaultIgnoredDocExtensions[lower]
 	return ok
 }
 
@@ -95,11 +116,11 @@ func (d *Discoverer) Discover(sourceDir string) ([]domain.AssetGroup, error) {
 			}
 
 			ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(entry.Name()), "."))
-			if isIgnoredDocExt(ext) {
+			if d.isIgnoredDocExt(ext) {
 				return nil
 			}
 
-			baseName := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+			baseName, ext, isXMP, xmpTargetExt := d.parseFileInfo(entry.Name())
 			dir := filepath.Dir(path)
 			key := dir + "::" + strings.ToLower(baseName)
 
@@ -113,14 +134,17 @@ func (d *Discoverer) Discover(sourceDir string) ([]domain.AssetGroup, error) {
 			}
 
 			switch {
+			case isXMP:
+				// 如果是 RAW 专属侧车 (.nef.xmp) 或者是首个 xmp，优先记录为 XMPPath
+				if group.XMPPath == "" || d.isRawExt(xmpTargetExt) {
+					group.XMPPath = path
+				}
+				group.CompanionPaths = append(group.CompanionPaths, path)
 			case d.isRawExt(ext):
 				group.RawPath = path
 			case ext == "jpg" || ext == "jpeg":
 				group.JPGPath = path
 			default:
-				if strings.EqualFold(ext, "xmp") {
-					group.XMPPath = path
-				}
 				group.CompanionPaths = append(group.CompanionPaths, path)
 			}
 			return nil
@@ -158,6 +182,27 @@ func (d *Discoverer) Discover(sourceDir string) ([]domain.AssetGroup, error) {
 func (d *Discoverer) isRawExt(ext string) bool {
 	_, ok := d.rawExtensions[strings.ToLower(ext)]
 	return ok
+}
+
+// parseFileInfo 解析文件的基名、扩展名、是否为 XMP 侧车以及 XMP 针对的媒体扩展名（如 DSC_001.nef.xmp -> Base: DSC_001, Ext: xmp, isXMP: true, targetExt: nef）
+func (d *Discoverer) parseFileInfo(filename string) (baseName, ext string, isXMP bool, xmpTargetExt string) {
+	lower := strings.ToLower(filename)
+	if strings.HasSuffix(lower, ".xmp") {
+		isXMP = true
+		ext = "xmp"
+		trimmed := filename[:len(filename)-4] // 去掉 .xmp
+		subExt := strings.ToLower(strings.TrimPrefix(filepath.Ext(trimmed), "."))
+		if d.isRawExt(subExt) || subExt == "jpg" || subExt == "jpeg" || subExt == "png" || subExt == "tif" || subExt == "tiff" {
+			xmpTargetExt = subExt
+			baseName = strings.TrimSuffix(trimmed, filepath.Ext(trimmed))
+			return baseName, ext, isXMP, xmpTargetExt
+		}
+		return trimmed, ext, isXMP, ""
+	}
+
+	ext = strings.ToLower(strings.TrimPrefix(filepath.Ext(filename), "."))
+	baseName = strings.TrimSuffix(filename, filepath.Ext(filename))
+	return baseName, ext, false, ""
 }
 
 // IsAllowedGPXTrack 判断文件名是否为受支持的 GPX 运动轨迹（仅限 hiking 与 walking，且后缀为 .gpx）

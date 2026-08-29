@@ -308,8 +308,11 @@ func TestWriteLocation(t *testing.T) {
 		if !strings.Contains(argsStr, "-XMP-photoshop:Country=中国") || !strings.Contains(argsStr, "-IPTC:Country-PrimaryLocationName=中国") {
 			t.Errorf("国家字段写入不完整: %s", argsStr)
 		}
-		if !strings.Contains(argsStr, "-XMP-iptcCore:CountryCode=CN") || !strings.Contains(argsStr, "-IPTC:Country-PrimaryLocationCode=CN") {
-			t.Errorf("国家代码写入不完整: %s", argsStr)
+		if !strings.Contains(argsStr, "-XMP-iptcCore:CountryCode=CN") || !strings.Contains(argsStr, "-IPTC:Country-PrimaryLocationCode=CHN") {
+			t.Errorf("国家代码写入不完整或未正确转换为 Alpha-3: %s", argsStr)
+		}
+		if !strings.Contains(argsStr, "-XMP-iptcExt:LocationCreatedCountryCode=CN") || !strings.Contains(argsStr, "-XMP-iptcExt:LocationShownCountryCode=CN") {
+			t.Errorf("IPTC Extension 国家代码写入不完整: %s", argsStr)
 		}
 		if !strings.Contains(argsStr, "-XMP-photoshop:State=山西省") {
 			t.Errorf("省份字段写入不完整: %s", argsStr)
@@ -368,8 +371,84 @@ func TestSyncLocationToXMP(t *testing.T) {
 	if !strings.Contains(argsStr, "-XMP-iptcCore:Location<XMP-iptcCore:Location") {
 		t.Errorf("缺少 XMP Location 映射: %s", argsStr)
 	}
+	if !strings.Contains(argsStr, "-XMP-lr:HierarchicalSubject<XMP-lr:HierarchicalSubject") {
+		t.Errorf("缺少 XMP-lr:HierarchicalSubject 映射: %s", argsStr)
+	}
 	if strings.Contains(argsStr, "GPSLatitude") {
 		t.Errorf("SyncLocationToXMP 不应混入 GPSLatitude 标签: %s", argsStr)
+	}
+}
+
+func TestWriteGeotagToXMP(t *testing.T) {
+	runner := &mockCommandRunner{}
+	sourceRaw := "/path/to/RAW.NEF"
+	targetXMP := "/path/to/RAW.nef.xmp"
+	gpxFiles := []string{"/tracks/day1.gpx"}
+	geosync := "0"
+
+	_, err := WriteGeotagToXMP(runner, sourceRaw, targetXMP, gpxFiles, geosync)
+	if err != nil {
+		t.Fatalf("WriteGeotagToXMP 出错: %v", err)
+	}
+
+	argsStr := strings.Join(runner.lastArgs, " ")
+	if !strings.Contains(argsStr, "-TagsFromFile /path/to/RAW.NEF") {
+		t.Errorf("缺少 -TagsFromFile: %s", argsStr)
+	}
+	if !strings.Contains(argsStr, "-geotag /tracks/day1.gpx") {
+		t.Errorf("缺少 -geotag: %s", argsStr)
+	}
+	if !strings.HasSuffix(argsStr, targetXMP) {
+		t.Errorf("目标应为 XMP 侧车文件: %s", argsStr)
+	}
+}
+
+func TestWriteCoordinatesToXMP(t *testing.T) {
+	runner := &mockCommandRunner{}
+	targetXMP := "/path/to/photo.nef.xmp"
+
+	err := WriteCoordinatesToXMP(runner, targetXMP, 39.9042, 116.3917, 45.5)
+	if err != nil {
+		t.Fatalf("WriteCoordinatesToXMP 出错: %v", err)
+	}
+
+	argsStr := strings.Join(runner.lastArgs, " ")
+	if !strings.Contains(argsStr, "-XMP-exif:GPSLatitude=39.904200 N") {
+		t.Errorf("缺少 XMP-exif:GPSLatitude 标签: %s", argsStr)
+	}
+	if !strings.Contains(argsStr, "-XMP-exif:GPSLongitude=116.391700 E") {
+		t.Errorf("缺少 XMP-exif:GPSLongitude 标签: %s", argsStr)
+	}
+	if !strings.Contains(argsStr, "-XMP-exif:GPSAltitude=45.50") {
+		t.Errorf("缺少 XMP-exif:GPSAltitude 标签: %s", argsStr)
+	}
+}
+
+func TestWriteLocationToXMP(t *testing.T) {
+	runner := &mockCommandRunner{}
+	targetXMP := "/path/to/photo.nef.xmp"
+	loc := domain.LocationInfo{
+		Country:     "中国",
+		CountryCode: "CN",
+		Province:    "广东省",
+		City:        "潮州市",
+		District:    "吉利村",
+	}
+
+	err := WriteLocationToXMP(runner, targetXMP, loc)
+	if err != nil {
+		t.Fatalf("WriteLocationToXMP 出错: %v", err)
+	}
+
+	argsStr := strings.Join(runner.lastArgs, " ")
+	if !strings.Contains(argsStr, "-XMP-photoshop:City=潮州市") {
+		t.Errorf("缺少 XMP-photoshop:City: %s", argsStr)
+	}
+	if !strings.Contains(argsStr, "-XMP-iptcExt:LocationCreatedSublocation=吉利村") {
+		t.Errorf("缺少 LocationCreatedSublocation: %s", argsStr)
+	}
+	if !strings.Contains(argsStr, "-XMP-lr:HierarchicalSubject+=中国|广东省|潮州市|吉利村") {
+		t.Errorf("缺少 HierarchicalSubject 标签树: %s", argsStr)
 	}
 }
 

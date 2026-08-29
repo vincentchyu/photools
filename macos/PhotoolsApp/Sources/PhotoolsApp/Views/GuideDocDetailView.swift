@@ -144,8 +144,8 @@ public struct GuideDocDetailView: View {
         let candidates = [
             (repoRoot as NSString).appendingPathComponent("docs/\(fileName)"),
             (repoRoot as NSString).appendingPathComponent(fileName),
-            "/Users/vincent/Pictures/GPS/docs/\(fileName)",
-            "/Users/vincent/Pictures/GPS/\(fileName)"
+            (FileManager.default.currentDirectoryPath as NSString).appendingPathComponent("docs/\(fileName)"),
+            (FileManager.default.currentDirectoryPath as NSString).appendingPathComponent(fileName)
         ]
 
         for path in candidates {
