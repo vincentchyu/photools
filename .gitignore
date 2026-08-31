@@ -10,6 +10,7 @@ dist/
 /.codex/
 /pkg/geodata/data/
 /scratch/
+/photools
 
 # macOS
 .DS_Store

@@ -1441,7 +1441,7 @@ func (m Model) viewInitializing() string {
 		b.WriteString(lipgloss.NewStyle().Foreground(MutedTextColor).Render("⚙️ 系统正在并发自检环境与流式装载本地离线地理数据包，请稍候..."))
 	}
 
-	return PanelStyle.Render(b.String())
+	return PanelStyle.Width(m.panelWidth()).Render(b.String())
 }
 
 func (m Model) viewMenu() string {
@@ -1660,9 +1660,8 @@ func (m Model) viewGlobalSettings() string {
 		if len(m.tabCandidates) > 4 {
 			badges = append(badges, lipgloss.NewStyle().Foreground(MutedTextColor).Render(fmt.Sprintf("等 %d 个候选...", len(m.tabCandidates))))
 		}
-		b.WriteString(lipgloss.NewStyle().Foreground(PrimaryColor).Render("💡 候选路径 (按 [Tab] 循环切换): ") + strings.Join(badges, " ") + "\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(PrimaryColor).Render("💡 候选路径: ") + strings.Join(badges, " ") + "\n")
 	}
-	b.WriteString("\n")
 
 	// 2. Flat Mode
 	prefix1 := "  "
@@ -1673,7 +1672,7 @@ func (m Model) viewGlobalSettings() string {
 	if m.flatMode {
 		flatCheck = lipgloss.NewStyle().Foreground(SuccessColor).Bold(true).Render("[✔]")
 	}
-	b.WriteString(fmt.Sprintf("%s%s %s 扁平原地模式 (Flat Mode / 忽略 Inbox/Processed 结构，直接扫描并就地处理保存)\n\n",
+	b.WriteString(fmt.Sprintf("%s%s %s 扁平原地模式 (Flat Mode / 忽略分层，就地扫描处理保存)\n",
 		prefix1, StatusLabel.Render("[2/9]"), flatCheck))
 
 	// 3. Sidecar Policy (4 档轮转切换)
@@ -1684,7 +1683,7 @@ func (m Model) viewGlobalSettings() string {
 	var policyBadge string
 	switch m.sidecarPolicy {
 	case domain.PolicySmart, domain.PolicyReadOnly:
-		policyBadge = BadgeSuccess.Render(" 🛡️ 智能分层模式 (GPS修正写RAW/地名写XMP/JPG全嵌 · 默认推荐) ")
+		policyBadge = BadgeSuccess.Render(" 🛡️ 智能分层模式 (GPS写RAW/地名写XMP/JPG全嵌) ")
 	case domain.PolicySidecarOnly:
 		policyBadge = BadgeInfo.Render(" 📝 纯XMP侧车模式 (不修改任何原图) ")
 	case domain.PolicyEmbedAndSidecar:
@@ -1692,9 +1691,9 @@ func (m Model) viewGlobalSettings() string {
 	case domain.PolicyEmbedOnly:
 		policyBadge = lipgloss.NewStyle().Background(PrimaryColor).Foreground(lipgloss.Color("#FFFFFF")).Render(" 📷 纯原图内嵌写入 (不产生XMP) ")
 	default:
-		policyBadge = BadgeSuccess.Render(" 🛡️ 智能分层模式 (GPS修正写RAW/地名写XMP/JPG全嵌 · 默认推荐) ")
+		policyBadge = BadgeSuccess.Render(" 🛡️ 智能分层模式 (GPS写RAW/地名写XMP/JPG全嵌) ")
 	}
-	b.WriteString(fmt.Sprintf("%s%s 元数据写入策略 (Sidecar Policy / 按 [空格] 循环切换)：\n   %s\n\n",
+	b.WriteString(fmt.Sprintf("%s%s 元数据写入策略 (按 [空格] 切换)：%s\n",
 		prefix2, StatusLabel.Render("[3/9]"), policyBadge))
 
 	// 4. Companion Extensions
@@ -1702,8 +1701,8 @@ func (m Model) viewGlobalSettings() string {
 	if m.globalFocusIdx == 3 {
 		prefix3 = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Render("▶ ")
 	}
-	b.WriteString(fmt.Sprintf("%s%s 伴随文件扩展名白名单 (Companion Extensions / 逗号或空格分隔)：\n", prefix3, StatusLabel.Render("[4/9]")))
-	b.WriteString(m.companionExtsInput.View() + "\n\n")
+	b.WriteString(fmt.Sprintf("%s%s 伴随文件扩展名白名单 (逗号或空格分隔)：\n", prefix3, StatusLabel.Render("[4/9]")))
+	b.WriteString(m.companionExtsInput.View() + "\n")
 
 	// 5. SourceDir
 	prefix4 := "  "
@@ -1726,9 +1725,8 @@ func (m Model) viewGlobalSettings() string {
 		if len(m.tabCandidates) > 4 {
 			badges = append(badges, lipgloss.NewStyle().Foreground(MutedTextColor).Render(fmt.Sprintf("等 %d 个候选...", len(m.tabCandidates))))
 		}
-		b.WriteString(lipgloss.NewStyle().Foreground(PrimaryColor).Render("💡 候选路径 (按 [Tab] 循环切换): ") + strings.Join(badges, " ") + "\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(PrimaryColor).Render("💡 候选路径: ") + strings.Join(badges, " ") + "\n")
 	}
-	b.WriteString("\n")
 
 	// 6. AllowNoGPS
 	prefix5 := "  "
@@ -1739,7 +1737,7 @@ func (m Model) viewGlobalSettings() string {
 	if m.allowNoGPS {
 		gpsCheck = lipgloss.NewStyle().Foreground(SuccessColor).Bold(true).Render("[✔]")
 	}
-	b.WriteString(fmt.Sprintf("%s%s %s 无 GPS 软降级容错 (允许无 GPS 照片跳过地名写入直接归档)\n\n",
+	b.WriteString(fmt.Sprintf("%s%s %s 无 GPS 软降级容错 (允许无 GPS 照片跳过地名直接归档)\n",
 		prefix5, StatusLabel.Render("[6/9]"), gpsCheck))
 
 	// 7. RawExts
@@ -1748,7 +1746,7 @@ func (m Model) viewGlobalSettings() string {
 		prefix6 = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Render("▶ ")
 	}
 	b.WriteString(fmt.Sprintf("%s%s RAW 格式识别白名单：\n", prefix6, StatusLabel.Render("[7/9]")))
-	b.WriteString(m.rawExtsInput.View() + "\n\n")
+	b.WriteString(m.rawExtsInput.View() + "\n")
 
 	// 8. TestBackup
 	prefix7 := "  "
@@ -1759,7 +1757,7 @@ func (m Model) viewGlobalSettings() string {
 	if m.testBackup {
 		bakCheck = lipgloss.NewStyle().Foreground(SuccessColor).Bold(true).Render("[✔]")
 	}
-	b.WriteString(fmt.Sprintf("%s%s %s 测试安全快照备份 (执行前全量备份至 Inbox_bak)\n\n",
+	b.WriteString(fmt.Sprintf("%s%s %s 测试安全快照备份 (执行前全量备份至 Inbox_bak)\n",
 		prefix7, StatusLabel.Render("[8/9]"), bakCheck))
 
 	// 9. Workers
@@ -1770,8 +1768,13 @@ func (m Model) viewGlobalSettings() string {
 	b.WriteString(fmt.Sprintf("%s%s 并发处理 Worker 协程数：\n", prefix8, StatusLabel.Render("[9/9]")))
 	b.WriteString(m.workersInput.View() + "\n\n")
 
-	b.WriteString(lipgloss.NewStyle().Foreground(MutedTextColor).Render("快捷操作：按 [Tab] 补全路径/切换，按 [↑/↓] 切换输入项，按 [空格] 切换选项/开关，按 [Enter] 应用会话，按 [Ctrl+S] 永久保存，按 [Esc] 取消返回"))
-	return PanelStyle.Render(b.String())
+	b.WriteString(lipgloss.NewStyle().Foreground(MutedTextColor).Render("快捷操作：按 [Tab] 补全/切换，按 [↑/↓] 切换输入项，按 [空格] 切换选项/开关，按 [Enter] 应用会话，按 [Ctrl+S] 永久保存，按 [Esc] 返回"))
+
+	panelWidth := 76
+	if m.width > 20 {
+		panelWidth = min(90, max(50, m.width-6))
+	}
+	return PanelStyle.Width(panelWidth).Render(b.String())
 }
 
 func (m Model) viewPluginSettings() string {
@@ -1805,7 +1808,14 @@ func (m Model) viewPluginSettings() string {
 	}
 
 	b.WriteString(lipgloss.NewStyle().Foreground(MutedTextColor).Render("快捷操作：按 [Enter] 应用于当前会话，按 [Ctrl+S] 永久保存至配置文件，按 [Esc] 取消返回"))
-	return PanelStyle.Render(b.String())
+	return PanelStyle.Width(m.panelWidth()).Render(b.String())
+}
+
+func (m Model) panelWidth() int {
+	if m.width > 20 {
+		return min(96, max(50, m.width-6))
+	}
+	return 76
 }
 
 func (m Model) viewConfig() string {
@@ -1855,34 +1865,35 @@ func (m Model) viewConfig() string {
 
 	// 2. 全局环境与安全调度策略
 	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(PrimaryColor).Render("🛡️ 2. 全局运行环境与调度策略：") + "\n")
-	flatStr := "标准分层模式 (Inbox ➔ Processed)"
+	flatStr := "标准分层 (Inbox ➔ Processed)"
 	if m.flatMode {
-		flatStr = "⚡ 扁平原地模式 (指定目录下直接就地处理与保存)"
+		flatStr = "⚡ 扁平原地 (就地处理保存)"
 	}
-	allowGPSStr := "无 GPS 照片在逆地理阶段良性跳过，安全进入拍摄日期归档"
+	allowGPSStr := "无GPS良性跳过"
 	if !m.allowNoGPS {
-		allowGPSStr = "严格模式 (无 GPS 照片将保留在源目录并在报告中提示)"
+		allowGPSStr = "严格模式 (无GPS保留源目录)"
 	}
-	bakStr := "关闭 (直接操作源文件)"
+	bakStr := "关闭"
 	if m.testBackup {
-		bakStr = "✅ 开启 (处理前自动全量快照备份至 Inbox_bak)"
+		bakStr = "✅ 全量快照备份至 Inbox_bak"
 	}
 
-	b.WriteString(fmt.Sprintf("  • 工作区根目录: %s\n", lipgloss.NewStyle().Foreground(TextColor).Render(m.currentBaseDir)))
-	b.WriteString(fmt.Sprintf("  • 运行目录模式: %s\n", lipgloss.NewStyle().Foreground(HighlightColor).Render(flatStr)))
-	b.WriteString(fmt.Sprintf("  • 并发处理协程: %s 个 Worker 协程并发\n", lipgloss.NewStyle().Foreground(HighlightColor).Render(strconv.Itoa(m.sessionConfig.Global.Workers))))
-	b.WriteString(fmt.Sprintf("  • 无GPS容错策略: %s\n", lipgloss.NewStyle().Foreground(TextColor).Render(allowGPSStr)))
-	b.WriteString(fmt.Sprintf("  • 安全快照备份: %s\n", lipgloss.NewStyle().Foreground(TextColor).Render(bakStr)))
-	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf("  • 工作区: %s  |  模式: %s  |  并发: %s 协程\n",
+		StatusPath.Render(filepath.Base(m.currentBaseDir)),
+		lipgloss.NewStyle().Foreground(HighlightColor).Render(flatStr),
+		lipgloss.NewStyle().Foreground(HighlightColor).Render(strconv.Itoa(m.sessionConfig.Global.Workers))))
+	b.WriteString(fmt.Sprintf("  • 软降级容错: %s  |  安全快照备份: %s\n\n",
+		lipgloss.NewStyle().Foreground(TextColor).Render(allowGPSStr),
+		lipgloss.NewStyle().Foreground(TextColor).Render(bakStr)))
 
 	// 3. 核心可编辑参数快速微调
-	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(PrimaryColor).Render("✏️ 3. 核心参数快速调整 (按 [↑/↓] 移动光标可直接修改)：") + "\n\n")
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(PrimaryColor).Render("✏️ 3. 核心参数快速调整 (按 [↑/↓] 切换输入项)：") + "\n")
 
 	prefix0 := "  "
 	if m.configFocusIdx == 0 {
 		prefix0 = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Render("▶ ")
 	}
-	b.WriteString(fmt.Sprintf("%s%s 扫描源目录 (SourceDir / 按 [Tab] 自动补全路径)：\n", prefix0, StatusLabel.Render("[1/3]")))
+	b.WriteString(fmt.Sprintf("%s%s 扫描源目录 (SourceDir / 按 [Tab] 补全路径)：\n", prefix0, StatusLabel.Render("[1/3]")))
 	b.WriteString(m.sourceDirInput.View() + "\n")
 	if m.configFocusIdx == 0 && len(m.tabCandidates) > 0 {
 		var badges []string
@@ -1898,17 +1909,15 @@ func (m Model) viewConfig() string {
 		if len(m.tabCandidates) > 4 {
 			badges = append(badges, lipgloss.NewStyle().Foreground(MutedTextColor).Render(fmt.Sprintf("等 %d 个候选...", len(m.tabCandidates))))
 		}
-		b.WriteString(lipgloss.NewStyle().Foreground(PrimaryColor).Render("💡 候选路径 (按 [Tab] 循环切换): ") + strings.Join(badges, " ") + "\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(PrimaryColor).Render("💡 候选路径: ") + strings.Join(badges, " ") + "\n")
 	}
-	b.WriteString("\n")
 
 	prefix1 := "  "
 	if m.configFocusIdx == 1 {
 		prefix1 = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Render("▶ ")
 	}
-	b.WriteString(fmt.Sprintf("%s%s 时间偏差补偿 (-geosync)：\n", prefix1, StatusLabel.Render("[2/3]")))
+	b.WriteString(fmt.Sprintf("%s%s 时间偏差补偿 (-geosync / 如 0, +15, -00:01:30)：\n", prefix1, StatusLabel.Render("[2/3]")))
 	b.WriteString(m.geosyncInput.View() + "\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(MutedTextColor).Render("说明：格式如 0 (无偏移), 15 (快15秒), -00:01:30 (相机慢1分30秒)\n\n"))
 
 	prefix2 := "  "
 	if m.configFocusIdx == 2 {
@@ -1921,8 +1930,8 @@ func (m Model) viewConfig() string {
 		b.WriteString(lipgloss.NewStyle().Foreground(WarningColor).Bold(true).Render(m.statusMessage) + "\n\n")
 	}
 
-	b.WriteString(lipgloss.NewStyle().Foreground(MutedTextColor).Render("操作指引：按 [Tab] 补全路径/切换，按 [↑/↓] 切换输入焦点，按 [Enter] 进入任务预检(Dry-Run)，按 [Esc] 返回能力勾选"))
-	return PanelStyle.Render(b.String())
+	b.WriteString(lipgloss.NewStyle().Foreground(MutedTextColor).Render("操作指引：按 [Tab] 补全/切换，按 [↑/↓] 切换输入焦点，按 [Enter] 进入预检(Dry-Run)，按 [Esc] 返回"))
+	return PanelStyle.Width(m.panelWidth()).Render(b.String())
 }
 
 func (m Model) viewDryRun() string {
@@ -1943,7 +1952,7 @@ func (m Model) viewDryRun() string {
 			b.WriteString(fmt.Sprintf("\n  %s  %s\n", m.progress.ViewAs(pct), lipgloss.NewStyle().Foreground(HighlightColor).Render(fmt.Sprintf("%d/%d 组 (%.0f%%)", m.processedNum, m.totalNum, pct*100))))
 		}
 		b.WriteString("\n" + lipgloss.NewStyle().Foreground(MutedTextColor).Render("⚡ 正在多协程并发极速装载元数据，按 [Esc] 可随时取消返回配置") + "\n")
-		return PanelStyle.Render(b.String())
+		return PanelStyle.Width(m.panelWidth()).Render(b.String())
 	}
 
 	statsLine := fmt.Sprintf(
@@ -2000,7 +2009,7 @@ func (m Model) viewDryRun() string {
 	}
 
 	b.WriteString(lipgloss.NewStyle().Foreground(MutedTextColor).Render("操作指引：按 [↑/↓] 浏览资产，按 [Enter] 确认并正式执行流水线，按 [Esc] 返回配置"))
-	return PanelStyle.Render(b.String())
+	return PanelStyle.Width(m.panelWidth()).Render(b.String())
 }
 
 func (m Model) viewExecuting() string {
@@ -2056,7 +2065,7 @@ func (m Model) viewExecuting() string {
 	b.WriteString("执行实时中文日志流：\n")
 	b.WriteString(m.viewport.View() + "\n\n")
 
-	return PanelStyle.Render(b.String())
+	return PanelStyle.Width(m.panelWidth()).Render(b.String())
 }
 
 func (m Model) viewSummary() string {
@@ -2120,5 +2129,5 @@ func (m Model) viewSummary() string {
 	b.WriteString(lipgloss.NewStyle().Foreground(HighlightColor).Render("📄 实时中文执行日志流已完整保存在: ~/.logs/photools/photools_latest.log") + "\n\n")
 
 	b.WriteString(lipgloss.NewStyle().Foreground(MutedTextColor).Render("操作指引：按 [Enter] 或 [Esc] 返回主菜单，按 [q] 退出程序"))
-	return PanelStyle.Render(b.String())
+	return PanelStyle.Width(m.panelWidth()).Render(b.String())
 }

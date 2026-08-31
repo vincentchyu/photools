@@ -137,3 +137,15 @@
 4. **主资产与排序**：
    - 资产列表必须以 `PhotoAssetGroup`（配套单元组）为核心展示单位；
    - 扫描阶段必须提取主文件 `fileModificationDate`，默认提供时间升序/降序及文件名升序/降序多维排序。
+
+---
+
+## 8. Homebrew Tap 双通道分发与维护规约 (vincentchyu/tap)
+
+1. **双通道架构与分工**：
+   - **默认通道 (`Formula/photools.rb`)**：`brew install vincentchyu/tap/photools`，面向开发者与全键盘终端用户。声明 `depends_on "exiftool"` 自动解决核心底层依赖，在 `install` 阶段自动生成并注入 Zsh、Bash、Fish 自动补全脚本；
+   - **桌面通道 (`Casks/photools.rb`)**：`brew install --cask vincentchyu/tap/photools`，面向桌面摄影师。自动拉取 `photools-macOS.dmg` 并将 `PhotoolsApp.app` 安装至 `/Applications`；
+2. **自动化发布闭环**：
+   - 发布新版本时执行 `./script/release_homebrew.sh <tag>` 自动计算源码 Tarball 与 DMG 的 SHA256 并更新 Formula/Cask；
+   - 配合 GitHub Actions (`.github/workflows/homebrew-release.yml`) 自动同步推送到 `vincentchyu/homebrew-tap` 仓库。
+

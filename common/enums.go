@@ -233,8 +233,10 @@ func (k IssueKind) String() string {
 // ==========================================
 
 const (
+	// CurrentVersion 当前发布版本号
+	CurrentVersion = "v0.0.2"
 	// DefaultProcessorName photools 全局处理引擎名称与版本标识
-	DefaultProcessorName = "photools v1.2.0"
+	DefaultProcessorName = "photools " + CurrentVersion
 	// DefaultWorkers 默认并发协程数
 	DefaultWorkers = 8
 	// DefaultGeosync 默认时间同步修正偏移

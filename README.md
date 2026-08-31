@@ -189,9 +189,28 @@ When photools corrects or interpolates coordinates, it embeds audit trails direc
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start & Installation
 
-### Option A: macOS Native App (Recommended for Photographers)
+### 🍺 Homebrew One-Line Install (Recommended for Developers & Keyboard Users)
+
+For developers and power-users, you can install `photools` with Homebrew in one line:
+
+```bash
+# 1. Install CLI & Interactive TUI Workbench (Auto-installs exiftool & shell completions)
+brew install vincentchyu/tap/photools
+
+# 2. (Optional) Install macOS Native Desktop App (.app)
+brew install --cask vincentchyu/tap/photools
+```
+
+> **Why Homebrew?**
+> * ⚡ **Automatic Dependencies**: Installs core engine `exiftool` automatically.
+> * ⌨️ **Shell Auto-Completion**: Installs full Zsh, Bash, and Fish Tab autocompletion out-of-the-box.
+> * 🖥️ **Instant TUI Workbench**: Run `photools` or `photools tui` to launch the interactive Bubble Tea UI immediately.
+
+---
+
+### Option A: macOS Native App (Direct Download)
 1. Download `photools-macOS.dmg` from [Releases](https://github.com/vincentchyu/photools/releases/latest).
 2. Drag `photoolsApp.app` to your `/Applications` folder.
 3. Open the app, select your photo folder & GPX files, and click **Run Pipeline**.

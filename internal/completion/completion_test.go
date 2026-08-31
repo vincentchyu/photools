@@ -17,6 +17,7 @@ func TestGenerateCompletions_AllCommandsAndFlagsIncluded(t *testing.T) {
 		"organize-by-date",
 		"geodata",
 		"completion",
+		"version",
 		"help",
 	}
 

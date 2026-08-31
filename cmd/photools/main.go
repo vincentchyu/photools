@@ -27,9 +27,16 @@ import (
 	"github.com/vincentchyu/photools/pkg/geodata"
 )
 
+// Version 当前编译版本号（支持编译期 -ldflags "-X main.Version=vX.Y.Z" 注入）
+var Version = common.CurrentVersion
+
 func exitApp(code int) {
 	exiftool.CloseDefaultPool()
 	os.Exit(code)
+}
+
+func printVersion() {
+	fmt.Printf("photools %s\n", Version)
 }
 
 func main() {
@@ -43,6 +50,17 @@ func main() {
 		<-sigCh
 		exitApp(130)
 	}()
+
+	if len(os.Args) >= 2 {
+		switch os.Args[1] {
+		case "completion":
+			runCompletion(os.Args[2:])
+			os.Exit(0)
+		case "version", "-v", "--version":
+			printVersion()
+			os.Exit(0)
+		}
+	}
 
 	// 启动时自动同步并升级 ~/.config/photools/plugins.json 配置
 	_, _ = config.LoadPluginsConfig("")
@@ -85,6 +103,9 @@ func main() {
 		runGeoData(os.Args[2:])
 	case "completion":
 		runCompletion(os.Args[2:])
+	case "version", "-v", "--version":
+		printVersion()
+		exitApp(0)
 	case "-h", "--help", "help":
 		printUsage()
 	default:
@@ -113,7 +134,7 @@ func defaultBaseDir() (string, error) {
 }
 
 func printUsage() {
-	fmt.Println("📷 photools - 摄影师专业 GPS 轨迹匹配、地理逆编码与照片结构化归档工具箱")
+	fmt.Printf("📷 photools %s - 摄影师专业 GPS 轨迹匹配、地理逆编码与照片结构化归档工具箱\n", Version)
 	fmt.Println()
 	fmt.Println("用法:")
 	fmt.Println("  photools                                在交互终端中直接启动可视化 TUI 插件工作台")
@@ -125,6 +146,7 @@ func printUsage() {
 	fmt.Println("  photools restore-test [选项]            [测试辅助] 从 Inbox_bak 备份目录一键还原原始照片至 Inbox")
 	fmt.Println("  photools geodata [操作]                 管理各大洲精细离线逆地理编码数据包 (list/install/remove/info/test)")
 	fmt.Println("  photools completion [shell]             生成或安装 Shell 自动补全脚本 (zsh/bash/fish/install)")
+	fmt.Println("  photools version                        显示当前版本号 (或 -v, --version)")
 	fmt.Println()
 	fmt.Println("常用选项 (适用 geotag/geocode/pipeline):")
 	fmt.Println("  -flat                                   [扁平原地模式] 忽略 Inbox/Processed 分层，直接扫描指定目录并原地保存/处理")

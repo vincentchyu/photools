@@ -189,9 +189,28 @@ photools 为 Mac 摄影师提供了基于 SwiftUI 打造的原生桌面应用。
 
 ---
 
-## 🚀 快速上手 (Quick Start)
+## 🚀 快速安装与上手 (Quick Start)
 
-### 方式 A：macOS 原生桌面应用（推荐摄影师使用）
+### 🍺 Homebrew 一键安装（推荐开发者与全键盘终端用户）
+
+对于习惯终端命令与键盘流的高级用户，一行 `brew install` 即可获得最极致的开箱即用体验：
+
+```bash
+# 1. 安装 CLI 命令行与 Bubble Tea 交互式 TUI 工作台（自动装配 exiftool 依赖与 Shell 自动补全）
+brew install vincentchyu/tap/photools
+
+# 2. （可选）安装 macOS 原生桌面客户端 (.app)
+brew install --cask vincentchyu/tap/photools
+```
+
+> **💡 为什么推荐 Homebrew 接入？**
+> * ⚡ **核心依赖自动解决**：Homebrew 会自动检测并安装核心底层工具 `exiftool`，彻底免除手动安装配置的麻烦；
+> * ⌨️ **全功能中文补全开箱即用**：自动静默注入 Zsh、Bash、Fish 的 Shell Tab 自动补全，敲 `photools <Tab>` 即可查看全部指令与中文注释；
+> * 🖥️ **交互式 TUI 随时拉起**：终端直接输入 `photools` 或 `photools tui`，立刻呈现全键盘操作的可视化流水线工作台。
+
+---
+
+### 方式 A：macOS 原生桌面应用（直接下载 DMG 安装）
 1. 前往 [Releases](https://github.com/vincentchyu/photools/releases/latest) 下载 `photools-macOS.dmg`；
 2. 双击打开，将 `photoolsApp.app` 拖入 `/Applications` 应用程序文件夹；
 3. 打开应用，选择照片与 GPX 目录，点击 **开始执行** 即可。
