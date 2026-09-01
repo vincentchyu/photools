@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/vincentchyu/photools/common"
+	"github.com/vincentchyu/photools/internal/i18n"
 )
 
 // CapabilityID 能力插件唯一标识 (指向 common.CapabilityID)
@@ -69,7 +70,7 @@ const (
 )
 
 // DefaultProcessorName 默认处理引擎名称与版本标识
-const DefaultProcessorName = common.DefaultProcessorName
+var DefaultProcessorName = common.DefaultProcessorName
 
 // GPSProvenance 记录 GPS 坐标的清洗与修正溯源指纹
 type GPSProvenance struct {
@@ -289,15 +290,31 @@ const (
 
 // OptionSpec 插件可配置项的自描述契约规范
 type OptionSpec struct {
-	Key          string                 `json:"key"`         // 选项标识，如 "window", "geosync", "in_place"
-	Name         string                 `json:"name"`        // 中文名称，如 "推算最大时间窗口"
-	Description  string                 `json:"description"` // 详细功能说明
-	Type         OptionType             `json:"type"`        // 数据类型
+	Key          string                 `json:"key"`                // 选项标识，如 "window", "geosync", "in_place"
+	NameKey      string                 `json:"name_key,omitempty"` // i18n 字典键
+	DescKey      string                 `json:"desc_key,omitempty"` // i18n 字典键
+	Type         OptionType             `json:"type"`               // 数据类型
 	Scope        OptionScope            `json:"scope,omitempty"`
 	PluginID     CapabilityID           `json:"plugin_id,omitempty"`
 	DefaultValue any                    `json:"default_value"`     // 默认值
 	Choices      []string               `json:"choices,omitempty"` // 预设快速切换项，如 ["15m", "30m", "1h", "2h"]
 	Validate     func(val string) error `json:"-"`
+}
+
+// DisplayName 返回根据当前语言动态匹配的名称 (100% 字典驱动)
+func (o OptionSpec) DisplayName() string {
+	if o.NameKey != "" {
+		return i18n.T(o.NameKey)
+	}
+	return o.Key
+}
+
+// DisplayDescription 返回根据当前语言动态匹配的详细说明 (100% 字典驱动)
+func (o OptionSpec) DisplayDescription() string {
+	if o.DescKey != "" {
+		return i18n.T(o.DescKey)
+	}
+	return ""
 }
 
 // CapabilityPlan 预检阶段评估结果

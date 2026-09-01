@@ -4,8 +4,6 @@ import SwiftUI
 public struct PipelineDashboardView: View {
     @ObservedObject var store: WorkspaceStore
     @ObservedObject private var lang = LanguageManager.shared
-    @State private var isAdvancedExpanded: Bool = false
-
     public init(store: WorkspaceStore) {
         self.store = store
     }
@@ -21,9 +19,6 @@ public struct PipelineDashboardView: View {
 
                 // 3. 四大核心自动化处理能力
                 capabilitiesSection
-
-                // 4. 高级模式与并发调优
-                advancedOptionsSection
             }
             .padding(18)
         }
@@ -33,8 +28,8 @@ public struct PipelineDashboardView: View {
     private var headerView: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(lang.text(.workbenchTitle))
-                    .font(.title2.weight(.bold))
+                // Text(lang.text(.workbenchTitle))
+                //    .font(.title2.weight(.bold))
                 Text(lang.text(.workbenchSubtitle))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -42,24 +37,8 @@ public struct PipelineDashboardView: View {
 
             Spacer()
 
-            // 核心执行主按钮与清除状态按钮组
+            // 核心执行主按钮组
             HStack(spacing: 8) {
-                if store.runState != .idle && !store.runState.isRunning {
-                    Button {
-                        store.resetTaskStatus()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "arrow.counterclockwise.circle.fill")
-                            Text(lang.text(.clearStatus))
-                        }
-                        .font(.subheadline.weight(.semibold))
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.secondary)
-                    .help(lang.text(.clearStatusHelp))
-                    .pulseOnHover(scale: 1.05, glowColor: .secondary)
-                }
-
                 if store.runState.isRunning {
                     Button(role: .destructive) {
                         store.cancelCurrentTask()
@@ -150,8 +129,8 @@ public struct PipelineDashboardView: View {
             capabilityCard(
                 isEnabled: $store.enableGPXMatch,
                 stepNumber: "1",
-                title: lang.text(.capGpxTitle),
-                desc: lang.text(.capGpxDesc),
+                title: store.pluginName(id: "gpx_matching", fallback: lang.text(.capGpxTitle)),
+                desc: store.pluginDesc(id: "gpx_matching", fallback: lang.text(.capGpxDesc)),
                 icon: "location.fill",
                 accentColor: .blue
             ) {
@@ -170,8 +149,8 @@ public struct PipelineDashboardView: View {
             capabilityCard(
                 isEnabled: $store.enableInterpolate,
                 stepNumber: "2",
-                title: lang.text(.capInterpolateTitle),
-                desc: lang.text(.capInterpolateDesc),
+                title: store.pluginName(id: "gps_interpolate", fallback: lang.text(.capInterpolateTitle)),
+                desc: store.pluginDesc(id: "gps_interpolate", fallback: lang.text(.capInterpolateDesc)),
                 icon: "phone.badge.waveform.fill",
                 accentColor: .orange
             ) {
@@ -195,8 +174,8 @@ public struct PipelineDashboardView: View {
             capabilityCard(
                 isEnabled: $store.enableGeocode,
                 stepNumber: "3",
-                title: lang.text(.capGeocodeTitle),
-                desc: lang.text(.capGeocodeDesc),
+                title: store.pluginName(id: "reverse_geocode", fallback: lang.text(.capGeocodeTitle)),
+                desc: store.pluginDesc(id: "reverse_geocode", fallback: lang.text(.capGeocodeDesc)),
                 icon: "globe.asia.australia.fill",
                 accentColor: .teal
             ) {
@@ -209,8 +188,8 @@ public struct PipelineDashboardView: View {
             capabilityCard(
                 isEnabled: $store.enableArchive,
                 stepNumber: "4",
-                title: lang.text(.capArchiveTitle),
-                desc: lang.text(.capArchiveDesc),
+                title: store.pluginName(id: "date_archive", fallback: lang.text(.capArchiveTitle)),
+                desc: store.pluginDesc(id: "date_archive", fallback: lang.text(.capArchiveDesc)),
                 icon: "archivebox.fill",
                 accentColor: .indigo
             )
@@ -267,102 +246,6 @@ public struct PipelineDashboardView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .stroke(isEnabled.wrappedValue ? accentColor.opacity(0.3) : Color.secondary.opacity(0.1), lineWidth: 1)
-                )
-        )
-    }
-
-    // 高级选项与并发调优 (整行任意位置点击均可平滑展开/收起)
-    private var advancedOptionsSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isAdvancedExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: isAdvancedExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 12)
-
-                    Text(lang.text(.advancedOptionsTitle))
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-
-                    Spacer()
-
-                    Text(isAdvancedExpanded ? lang.text(.clickToCollapse) : lang.text(.clickToExpand))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            if isAdvancedExpanded {
-                Divider()
-                    .padding(.horizontal, 10)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text(lang.text(.sidecarPolicy))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Picker("", selection: $store.sidecarPolicy) {
-                            Text(lang.text(.policySmart)).tag("smart")
-                            Text(lang.text(.policySidecarOnly)).tag("sidecar_only")
-                            Text(lang.text(.policyEmbedAndSidecar)).tag("embed_and_sidecar")
-                            Text(lang.text(.policyEmbedOnly)).tag("embed_only")
-                        }
-                        .pickerStyle(.menu)
-                        .font(.caption)
-                    }
-
-                    HStack {
-                        Text(lang.text(.rawExtensionsPrompt))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        TextField("nef,cr3,arw,dng...", text: $store.rawExtensions)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.caption.monospaced())
-                    }
-
-                    HStack {
-                        Text(lang.text(.companionExtensions))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        TextField("wav,acr,exf...", text: $store.companionExtensions)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.caption.monospaced())
-                    }
-
-                    HStack {
-                        Text(lang.text(.concurrencyWorkersPrompt))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Stepper("\(store.workers)", value: $store.workers, in: 1...32)
-                            .font(.caption)
-                    }
-
-                    HStack(spacing: 16) {
-                        Toggle(lang.text(.flatMode), isOn: $store.flatMode)
-                        Toggle(lang.text(.inPlaceRename), isOn: $store.inPlace)
-                        Toggle(lang.text(.testBackupMode), isOn: $store.testBackup)
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-                .padding(14)
-            }
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
                 )
         )
     }

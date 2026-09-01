@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import PhotoolsCore
 import SwiftUI
@@ -110,6 +111,7 @@ public final class WorkspaceStore: ObservableObject {
     @Published public var sidecarPolicy: String
     @Published public var companionExtensions: String
     @Published public var gpxDirectory: String
+    @Published public var logDirectory: String
     @Published public var rawExtensions: String
     @Published public var workers: Int
 
@@ -122,6 +124,10 @@ public final class WorkspaceStore: ObservableObject {
     @Published public var allowNoGPS: Bool
     @Published public var enableArchive: Bool
     @Published public var testBackup: Bool
+
+    // 插件权威元数据 (由 Go Capability/FFI 动态下发)
+    @Published public private(set) var pluginMetas: [String: PluginMetadata] = [:]
+    private var cancellables = Set<AnyCancellable>()
 
     // 运行状态与日志
     @Published public private(set) var summary: WorkspaceSummary?
@@ -217,17 +223,41 @@ public final class WorkspaceStore: ObservableObject {
             self.processedDirectory = defaultProcessed
         }
 
+        // 1. 最高优先级：从系统磁盘 ~/.config/photools/plugins.json 加载全局 7 项持久偏好
+        let diskGlobal = DiskConfigLoader.load()
+        if let diskLang = diskGlobal?.language, !diskLang.isEmpty {
+            let lang = AppLanguage.fromConfigString(diskLang)
+            LanguageManager.shared.setLanguage(lang)
+        }
+
         let defaultGPX = WorkspaceScanner.defaultGPXDirectory
-        self.gpxDirectory = UserDefaults.standard.string(forKey: "gpxDirectory") ?? defaultGPX
+        self.gpxDirectory = diskGlobal?.gpxDir ?? UserDefaults.standard.string(forKey: "gpxDirectory") ?? defaultGPX
+        let defaultLog = ("~/.logs/photools" as NSString).expandingTildeInPath
+        self.logDirectory = diskGlobal?.logDir ?? UserDefaults.standard.string(forKey: "logDirectory") ?? defaultLog
+
+        let savedPolicy = diskGlobal?.sidecarPolicy ?? UserDefaults.standard.string(forKey: "sidecarPolicy") ?? "smart"
+        self.sidecarPolicy = (savedPolicy == "read_only") ? "smart" : savedPolicy
+
+        if let comp = diskGlobal?.companionExtensions, !comp.isEmpty {
+            self.companionExtensions = comp.joined(separator: ",")
+        } else {
+            self.companionExtensions = UserDefaults.standard.string(forKey: "companionExtensions") ?? "wav,acr,exf"
+        }
+
+        if let raw = diskGlobal?.rawExtensions, !raw.isEmpty {
+            self.rawExtensions = raw.joined(separator: ",")
+        } else {
+            self.rawExtensions = UserDefaults.standard.string(forKey: "rawExtensions") ?? "nef,cr3,arw,dng,raf,rw2,orf"
+        }
+
+        if let w = diskGlobal?.workers, w > 0 {
+            self.workers = w
+        } else {
+            let savedWorkers = UserDefaults.standard.integer(forKey: "workers")
+            self.workers = savedWorkers > 0 ? savedWorkers : ProcessInfo.processInfo.processorCount
+        }
 
         self.inPlace = UserDefaults.standard.bool(forKey: "inPlace")
-        let savedPolicy = UserDefaults.standard.string(forKey: "sidecarPolicy") ?? "smart"
-        self.sidecarPolicy = (savedPolicy == "read_only") ? "smart" : savedPolicy
-        self.companionExtensions = UserDefaults.standard.string(forKey: "companionExtensions") ?? "wav,acr,exf"
-        self.rawExtensions = UserDefaults.standard.string(forKey: "rawExtensions") ?? "nef,cr3,arw,dng,raf,rw2,orf"
-        
-        let savedWorkers = UserDefaults.standard.integer(forKey: "workers")
-        self.workers = savedWorkers > 0 ? savedWorkers : ProcessInfo.processInfo.processorCount
 
         // 插件默认设置
         self.enableGPXMatch = UserDefaults.standard.object(forKey: "enableGPXMatch") != nil ? UserDefaults.standard.bool(forKey: "enableGPXMatch") : true
@@ -241,6 +271,45 @@ public final class WorkspaceStore: ObservableObject {
 
         // 启动瞬间执行进程内自检与插件预热
         warmupInProcessEngine()
+
+        // 确保引擎语言与当前 LanguageManager 同步后再拉取权威插件元数据
+        let currentLang = LanguageManager.shared.currentLanguage
+        engine.setLanguage(currentLang.toConfigString)
+        reloadPluginMetas()
+
+        // 监听多语言切换事件，实时热刷新插件权威文案
+        LanguageManager.shared.$currentLanguage
+            .receive(on: RunLoop.main)
+            .sink { [weak self] lang in
+                guard let self else { return }
+                self.engine.setLanguage(lang.toConfigString)
+                self.reloadPluginMetas()
+            }
+            .store(in: &cancellables)
+    }
+
+    /// 重新从 Go 引擎拉取最新语言的插件元数据
+    public func reloadPluginMetas() {
+        let isZh = LanguageManager.shared.currentLanguage.isChinese
+        engine.setLanguage(isZh ? "zh-CN" : "en-US")
+        let metas = engine.getPluginMetas()
+        if !metas.isEmpty {
+            var dict: [String: PluginMetadata] = [:]
+            for m in metas {
+                dict[m.id] = m
+            }
+            self.pluginMetas = dict
+        }
+    }
+
+    /// 获取插件权威显示名称（优先 Go Capability，回退本地多语言）
+    public func pluginName(id: String, fallback: String) -> String {
+        pluginMetas[id]?.name ?? fallback
+    }
+
+    /// 获取插件权威详细描述（优先 Go Capability，回退本地多语言）
+    public func pluginDesc(id: String, fallback: String) -> String {
+        pluginMetas[id]?.desc ?? fallback
     }
 
     public static var defaultBaseDirectory: String {
@@ -314,25 +383,26 @@ public final class WorkspaceStore: ObservableObject {
     // 启动瞬间在后台并发完成四大插件的初始化并常驻内存
     private func warmupInProcessEngine() {
         guard engine.isLoaded else {
-            appendLog("ℹ️ 运行于 CLI 子进程模式 (未检测到 libphotools.dylib)")
+            appendLog(LanguageManager.shared.text(.logConsoleCliModeNotice))
             return
         }
 
-        appendLog("⚡ [photools Engine] 正在进程内异步预热四大核心插件与离线 3D KD-Tree 索引...")
+        engine.setLanguage(LanguageManager.shared.currentLanguage.toConfigString)
+        appendLog(LanguageManager.shared.text(.logConsoleWarmupStart))
         let eng = self.engine
         Task.detached(priority: .userInitiated) {
             eng.initializeEngine { [weak self] rep in
                 guard let self else { return }
                 Task { @MainActor in
                     if rep.status == "ready" {
-                        self.appendLog("  • [就绪] \(rep.name): \(rep.message)")
+                        self.appendLog("  • [\(rep.stage)] \(rep.name): \(rep.message)")
                     } else if rep.status == "warning" {
-                        self.appendLog("  • [提示] \(rep.name): \(rep.message)")
+                        self.appendLog("  • [\(rep.stage)] \(rep.name): \(rep.message)")
                     }
                 }
             }
             Task { @MainActor [weak self] in
-                self?.appendLog("🚀 [photools Engine] 插件全生命周期常驻内存就绪！\n")
+                self?.appendLog(LanguageManager.shared.text(.logConsoleWarmupReady))
                 self?.loadGeodataList()
             }
         }
@@ -342,6 +412,7 @@ public final class WorkspaceStore: ObservableObject {
         UserDefaults.standard.set(baseDirectory, forKey: "baseDirectory")
         UserDefaults.standard.set(sourceDirectory, forKey: "sourceDirectory")
         UserDefaults.standard.set(gpxDirectory, forKey: "gpxDirectory")
+        UserDefaults.standard.set(logDirectory, forKey: "logDirectory")
         UserDefaults.standard.set(processedDirectory, forKey: "processedDirectory")
         UserDefaults.standard.set(flatMode, forKey: "flatMode")
         UserDefaults.standard.set(inPlace, forKey: "inPlace")
@@ -358,6 +429,35 @@ public final class WorkspaceStore: ObservableObject {
         UserDefaults.standard.set(allowNoGPS, forKey: "allowNoGPS")
         UserDefaults.standard.set(enableArchive, forKey: "enableArchive")
         UserDefaults.standard.set(testBackup, forKey: "testBackup")
+
+        // 同步持久化写入 ~/.config/photools/plugins.json，与 CLI / TUI 保持 100% 共享
+        let payload: [String: Any] = [
+            "base_dir": baseDirectory,
+            "source_dir": sourceDirectory,
+            "gpx_dir": gpxDirectory,
+            "log_dir": logDirectory,
+            "language": LanguageManager.shared.currentLanguage.toConfigString,
+            "processed_dir": processedDirectory,
+            "flat_mode": flatMode,
+            "sidecar_policy": sidecarPolicy,
+            "sidecar_only": (sidecarPolicy == "sidecar_only"),
+            "companion_extensions": companionExtensions,
+            "raw_extensions": rawExtensions,
+            "in_place": inPlace,
+            "workers": workers,
+            "enable_gpx_match": enableGPXMatch,
+            "geosync": geosync,
+            "enable_interpolate": enableInterpolate,
+            "interpolate_window": interpolateWindow,
+            "enable_geocode": enableGeocode,
+            "allow_no_gps": allowNoGPS,
+            "enable_archive": enableArchive,
+            "test_backup": testBackup
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: payload),
+           let jsonStr = String(data: data, encoding: .utf8) {
+            engine.savePreferences(optionsJSON: jsonStr)
+        }
     }
 
     public func refresh() {
@@ -367,6 +467,7 @@ public final class WorkspaceStore: ObservableObject {
                 baseDirectory: baseDirectory,
                 sourceDirectory: effectiveSourceDirectory,
                 gpxDirectory: effectiveGPXDirectory,
+                logDirectory: logDirectory,
                 rawExtensions: parsedRawExtensions
             )
             self.summary = summary
@@ -496,11 +597,12 @@ public final class WorkspaceStore: ObservableObject {
             allowNoGPS: allowNoGPS,
             enableArchive: enableArchive,
             testBackup: testBackup,
-            backupDirectory: backupDir
+            backupDirectory: backupDir,
+            language: LanguageManager.shared.currentLanguage.toConfigString
         )
 
         if engine.isLoaded {
-            appendLog("🚀 开始执行自动化处理流水线 (In-Process Engine)...")
+            appendLog(LanguageManager.shared.text(.logConsoleStarting))
             Task {
                 do {
                     let summary = try await engine.runPipeline(options: options) { [weak self] evt in
@@ -511,18 +613,20 @@ public final class WorkspaceStore: ObservableObject {
                     }
                     runState = .succeeded
                     currentStageIndex = 5 // 全部 5 个节点圆满完成
-                    appendLog("🎉 流水线执行完毕！成功: \(summary.successCount), 跳过: \(summary.skipCount), 失败: \(summary.failCount), 耗时: \(String(format: "%.2f", summary.durationSeconds))s")
+                    let durStr = String(format: "%.2f", summary.durationSeconds)
+                    let summaryFmt = LanguageManager.shared.text(.logConsoleFinishedSummary)
+                    appendLog(String(format: summaryFmt, summary.successCount, summary.skipCount, summary.failCount, durStr))
                     refresh()
                 } catch {
                     runState = .failed(error.localizedDescription)
-                    appendLog("❌ 流水线执行失败：\(error.localizedDescription)")
+                    appendLog("❌ \(error.localizedDescription)")
                     refresh()
                 }
             }
         } else {
             // CLI 子进程降级模式
             let command = PhotoolsCommand.pipeline(executablePath: photoolsExecutablePath, options: options)
-            appendLog("🚀 开始执行外部 CLI 流水线...")
+            appendLog(LanguageManager.shared.text(.logConsoleCliStarting))
             appendLog("$ \(command.executablePath) \(command.arguments.joined(separator: " "))")
 
             Task {
@@ -535,11 +639,11 @@ public final class WorkspaceStore: ObservableObject {
                     }
                     runState = .succeeded
                     currentStageIndex = 5 // 全部 5 个节点圆满完成
-                    appendLog("✅ 流水线任务执行完成！")
+                    appendLog("✅ " + LanguageManager.shared.text(.taskCompletedTitle))
                     refresh()
                 } catch {
                     runState = .failed(error.localizedDescription)
-                    appendLog("❌ 执行异常：\(error.localizedDescription)")
+                    appendLog("❌ \(error.localizedDescription)")
                     refresh()
                 }
             }
@@ -553,8 +657,8 @@ public final class WorkspaceStore: ObservableObject {
         } else {
             processClient.cancel()
         }
-        runState = .failed("任务已被用户手动中断")
-        appendLog("🛑 任务已被手动中断。")
+        runState = .failed(LanguageManager.shared.text(.logConsoleInterrupted))
+        appendLog(LanguageManager.shared.text(.logConsoleInterrupted))
     }
 
     public func createBackup() {

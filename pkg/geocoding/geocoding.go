@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/vincentchyu/photools/internal/i18n"
 )
 
 // PackLoadInfo 记录单个数据包的装载详情
@@ -102,10 +104,23 @@ func (rg *ReverseGeocoder) InitProgressive(ctx context.Context, cb InitProgressC
 	if alreadyInit {
 		if cb != nil {
 			status := HealthReady
+			stage := "就绪"
+			msg := fmt.Sprintf("离线地理库已就绪 (共 %d 个点位 / %d 个数据包)", stats.TotalPoints, len(stats.Packs))
 			if len(stats.Packs) == 0 {
 				status = HealthDegraded
+				stage = "降级就绪"
+				msg = fmt.Sprintf("⚠️ 离线地理库已就绪 (内置基础库 %d 个点位)", stats.TotalPoints)
 			}
-			cb("就绪", 1.0, fmt.Sprintf("离线地理库已就绪 (共 %d 个点位 / %d 个数据包)", stats.TotalPoints, len(stats.Packs)), status, nil)
+			if !i18n.IsChinese() {
+				if len(stats.Packs) == 0 {
+					stage = "Degraded Ready"
+					msg = fmt.Sprintf("⚠️ Offline geocoding database ready (embedded %d points)", stats.TotalPoints)
+				} else {
+					stage = "Ready"
+					msg = fmt.Sprintf("Offline geocoding database ready (%d points / %d packs)", stats.TotalPoints, len(stats.Packs))
+				}
+			}
+			cb(stage, 1.0, msg, status, nil)
 		}
 		return nil
 	}
@@ -118,7 +133,13 @@ func (rg *ReverseGeocoder) InitProgressive(ctx context.Context, cb InitProgressC
 
 		// 1. 装载内嵌基础亚洲地名
 		if cb != nil {
-			cb("装载基础库", 0.1, fmt.Sprintf("正在装载内嵌核心地名库 (%d 个点位)...", len(embeddedAsiaPoints)), HealthReady, nil)
+			stage := "装载基础库"
+			msg := fmt.Sprintf("正在装载内嵌核心地名库 (%d 个点位)...", len(embeddedAsiaPoints))
+			if !i18n.IsChinese() {
+				stage = "Load Embedded"
+				msg = fmt.Sprintf("Loading embedded core points dataset (%d points)...", len(embeddedAsiaPoints))
+			}
+			cb(stage, 0.1, msg, HealthReady, nil)
 		}
 		rg.allPoints = make([]GeoPoint, len(embeddedAsiaPoints))
 		copy(rg.allPoints, embeddedAsiaPoints)
@@ -139,7 +160,13 @@ func (rg *ReverseGeocoder) InitProgressive(ctx context.Context, cb InitProgressC
 					rg.customPoints = customList
 					rg.stats.CustomPoints = len(customList)
 					if cb != nil {
-						cb("用户自定义地名", 0.2, fmt.Sprintf("已装载用户自定义地点 (%d 个点位)", len(customList)), HealthReady, nil)
+						stage := "用户自定义地名"
+						msg := fmt.Sprintf("已装载用户自定义地点 (%d 个点位)", len(customList))
+						if !i18n.IsChinese() {
+							stage = "Custom Places"
+							msg = fmt.Sprintf("Loaded user custom places (%d points)", len(customList))
+						}
+						cb(stage, 0.2, msg, HealthReady, nil)
 					}
 				}
 			}
@@ -180,7 +207,13 @@ func (rg *ReverseGeocoder) InitProgressive(ctx context.Context, cb InitProgressC
 
 				packPercent := 0.2 + (0.6 * float64(idx) / float64(len(packFiles)))
 				if cb != nil {
-					cb("装载离线数据包", packPercent, fmt.Sprintf("正在解析离线地理包 [%s] (%d/%d)...", entry.Name(), idx+1, len(packFiles)), HealthReady, nil)
+					stage := "装载离线数据包"
+					msg := fmt.Sprintf("正在解析离线地理包 [%s] (%d/%d)...", entry.Name(), idx+1, len(packFiles))
+					if !i18n.IsChinese() {
+						stage = "Load Data Pack"
+						msg = fmt.Sprintf("Parsing geodata pack [%s] (%d/%d)...", entry.Name(), idx+1, len(packFiles))
+					}
+					cb(stage, packPercent, msg, HealthReady, nil)
 				}
 
 				loadStart := time.Now()
@@ -213,7 +246,13 @@ func (rg *ReverseGeocoder) InitProgressive(ctx context.Context, cb InitProgressC
 
 		// 4. 构建 3D 球面 KD-Tree 空间索引
 		if cb != nil {
-			cb("构建空间索引", 0.85, "正在构建 3D 球面 KD-Tree 空间加速索引...", HealthReady, nil)
+			stage := "构建空间索引"
+			msg := "正在构建 3D 球面 KD-Tree 空间加速索引..."
+			if !i18n.IsChinese() {
+				stage = "Build KD-Tree"
+				msg = "Building 3D Spherical KD-Tree spatial index..."
+			}
+			cb(stage, 0.85, msg, HealthReady, nil)
 		}
 
 		if len(added) > 0 {
@@ -239,11 +278,23 @@ func (rg *ReverseGeocoder) InitProgressive(ctx context.Context, cb InitProgressC
 		// 5. 汇报最终就绪状态
 		if len(rg.stats.Packs) == 0 {
 			if cb != nil {
-				cb("降级就绪", 1.0, fmt.Sprintf("⚠️ 未安装外挂离线数据包，已启用内置基础库 (%d 点位)", rg.stats.TotalPoints), HealthDegraded, nil)
+				stage := "降级就绪"
+				msg := fmt.Sprintf("⚠️ 未安装外挂离线数据包，已启用内置基础库 (%d 点位)", rg.stats.TotalPoints)
+				if !i18n.IsChinese() {
+					stage = "Degraded Ready"
+					msg = fmt.Sprintf("⚠️ No external packs installed, enabled embedded base dataset (%d points)", rg.stats.TotalPoints)
+				}
+				cb(stage, 1.0, msg, HealthDegraded, nil)
 			}
 		} else {
 			if cb != nil {
-				cb("就绪", 1.0, fmt.Sprintf("离线地理库就绪 (已加载 %d 点位 / %d 个数据包，建树 %.2fs)", rg.stats.TotalPoints, len(rg.stats.Packs), rg.stats.TreeBuildTime.Seconds()), HealthReady, nil)
+				stage := "就绪"
+				msg := fmt.Sprintf("离线地理库就绪 (已加载 %d 点位 / %d 个数据包，建树 %.2fs)", rg.stats.TotalPoints, len(rg.stats.Packs), rg.stats.TreeBuildTime.Seconds())
+				if !i18n.IsChinese() {
+					stage = "Ready"
+					msg = fmt.Sprintf("Offline geocoding database ready (%d points / %d packs loaded, build tree %.2fs)", rg.stats.TotalPoints, len(rg.stats.Packs), rg.stats.TreeBuildTime.Seconds())
+				}
+				cb(stage, 1.0, msg, HealthReady, nil)
 			}
 		}
 	})

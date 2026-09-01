@@ -77,6 +77,11 @@ private typealias FnCreateBackup = @convention(c) (UnsafePointer<CChar>, UnsafeP
 private typealias FnRestoreBackup = @convention(c) (UnsafePointer<CChar>, UnsafePointer<CChar>, UnsafePointer<CChar>, Int32) -> Int32
 private typealias FnCancelTask = @convention(c) () -> Void
 private typealias FnInspectPhotoMetadata = @convention(c) (UnsafePointer<CChar>) -> UnsafePointer<CChar>?
+private typealias FnSetLanguage = @convention(c) (UnsafePointer<CChar>?) -> Void
+private typealias FnSavePreferences = @convention(c) (UnsafePointer<CChar>?) -> Int32
+private typealias FnGetGlobalConfigJSON = @convention(c) () -> UnsafePointer<CChar>?
+private typealias FnGetPluginMetasJSON = @convention(c) () -> UnsafePointer<CChar>?
+private typealias FnGetGlobalOptionSpecsJSON = @convention(c) () -> UnsafePointer<CChar>?
 private typealias FnShutdown = @convention(c) () -> Void
 private typealias FnFreeString = @convention(c) (UnsafePointer<CChar>?) -> Void
 
@@ -109,6 +114,11 @@ public final class PhotoolsEngine: @unchecked Sendable {
     private var fnRestoreBackup: FnRestoreBackup?
     private var fnCancelTask: FnCancelTask?
     private var fnInspectPhotoMetadata: FnInspectPhotoMetadata?
+    private var fnSetLanguage: FnSetLanguage?
+    private var fnSavePreferences: FnSavePreferences?
+    private var fnGetGlobalConfigJSON: FnGetGlobalConfigJSON?
+    private var fnGetPluginMetasJSON: FnGetPluginMetasJSON?
+    private var fnGetGlobalOptionSpecsJSON: FnGetGlobalOptionSpecsJSON?
     private var fnShutdown: FnShutdown?
     private var fnFreeString: FnFreeString?
 
@@ -187,6 +197,21 @@ public final class PhotoolsEngine: @unchecked Sendable {
         }
         if let sym = dlsym(handle, "Photools_InspectPhotoMetadata") {
             fnInspectPhotoMetadata = unsafeBitCast(sym, to: FnInspectPhotoMetadata.self)
+        }
+        if let sym = dlsym(handle, "Photools_SetLanguage") {
+            fnSetLanguage = unsafeBitCast(sym, to: FnSetLanguage.self)
+        }
+        if let sym = dlsym(handle, "Photools_SavePreferences") {
+            fnSavePreferences = unsafeBitCast(sym, to: FnSavePreferences.self)
+        }
+        if let sym = dlsym(handle, "Photools_GetGlobalConfigJSON") {
+            fnGetGlobalConfigJSON = unsafeBitCast(sym, to: FnGetGlobalConfigJSON.self)
+        }
+        if let sym = dlsym(handle, "Photools_GetPluginMetasJSON") {
+            fnGetPluginMetasJSON = unsafeBitCast(sym, to: FnGetPluginMetasJSON.self)
+        }
+        if let sym = dlsym(handle, "Photools_GetGlobalOptionSpecsJSON") {
+            fnGetGlobalOptionSpecsJSON = unsafeBitCast(sym, to: FnGetGlobalOptionSpecsJSON.self)
         }
         if let sym = dlsym(handle, "Photools_Shutdown") {
             fnShutdown = unsafeBitCast(sym, to: FnShutdown.self)
@@ -365,7 +390,8 @@ public final class PhotoolsEngine: @unchecked Sendable {
             "allow_no_gps": options.allowNoGPS,
             "enable_archive": options.enableArchive,
             "test_backup": options.testBackup,
-            "backup_dir": options.testBackup ? options.backupDirectory : ""
+            "backup_dir": options.testBackup ? options.backupDirectory : "",
+            "language": options.language
         ]
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: jsonDict),
@@ -515,7 +541,63 @@ public final class PhotoolsEngine: @unchecked Sendable {
         return ExifMetadata.parse(from: dict, fallbackPath: filePath)
     }
 
-    // 11. 安全退出并回收全部常驻子进程资源
+    // 11. 设置当前运行时语言
+    public func setLanguage(_ lang: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let fn = fnSetLanguage else { return }
+        lang.withCString { fn($0) }
+    }
+
+    // 12. 获取 Go 端权威插件元数据与多语言职能表述 JSON
+    public func getPluginMetasJSON() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let fn = fnGetPluginMetasJSON, let ptr = fn() else { return nil }
+        defer { fnFreeString?(ptr) }
+        return String(cString: ptr)
+    }
+
+    /// 解析并返回强类型的插件元数据列表
+    public func getPluginMetas() -> [PluginMetadata] {
+        guard let jsonStr = getPluginMetasJSON(),
+              let data = jsonStr.data(using: .utf8),
+              let list = try? JSONDecoder().decode([PluginMetadata].self, from: data) else {
+            return []
+        }
+        return list
+    }
+
+    // 13. 保存偏好设置至 ~/.config/photools/plugins.json
+    @discardableResult
+    public func savePreferences(optionsJSON: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let fn = fnSavePreferences else { return false }
+        return optionsJSON.withCString { ptr in
+            fn(ptr) == 0
+        }
+    }
+
+    // 14. 获取 Go 端全局配置 JSON
+    public func getGlobalConfigJSON() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let fn = fnGetGlobalConfigJSON, let ptr = fn() else { return nil }
+        defer { fnFreeString?(ptr) }
+        return String(cString: ptr)
+    }
+
+    // 15. 获取 Go 端权威全局选项配置 JSON
+    public func getGlobalOptionSpecsJSON() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let fn = fnGetGlobalOptionSpecsJSON, let ptr = fn() else { return nil }
+        defer { fnFreeString?(ptr) }
+        return String(cString: ptr)
+    }
+
+    // 16. 安全退出并回收全部常驻子进程资源
     public func shutdown() {
         lock.lock()
         defer { lock.unlock() }

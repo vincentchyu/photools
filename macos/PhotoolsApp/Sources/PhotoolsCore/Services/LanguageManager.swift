@@ -38,6 +38,8 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case sectionGuide
 
     // Settings - Tabs
+    case tabSession
+    case tabGlobal
     case tabGeneral
     case tabPlugins
 
@@ -49,6 +51,9 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case flatModeDesc
     case sourceDirectory
     case gpxDirectory
+    case logDirectory
+    case globalPreferences
+    case sessionSettings
     case processedDirectory
     case performanceSection
     case rawExtensions
@@ -56,6 +61,7 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case companionExtensionsDesc
     case concurrencyWorkers
     case testBackupMode
+    case testBackupDesc
 
     // Settings - Plugins & Policies
     case sidecarPolicy
@@ -147,6 +153,13 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case viewFullLog
     case pendingReport
     case waitingForTask
+    case logConsoleStarting
+    case logConsoleFinishedSummary
+    case logConsoleWarmupStart
+    case logConsoleWarmupReady
+    case logConsoleCliStarting
+    case logConsoleCliModeNotice
+    case logConsoleInterrupted
 
     // Asset List & Filter
     case filterAll
@@ -336,15 +349,30 @@ public final class LanguageManager: ObservableObject {
     @Published public var currentLanguage: AppLanguage {
         didSet {
             UserDefaults.standard.set(currentLanguage.rawValue, forKey: userDefaultsKey)
+            PhotoolsEngine.shared.setLanguage(currentLanguage.isChinese ? "zh-CN" : "en-US")
         }
     }
 
-    public init() {
+    public init(configURL: URL? = nil) {
+        // 1. 最高优先级：检查系统盘 ~/.config/photools/plugins.json
+        if let diskGlobal = DiskConfigLoader.load(from: configURL),
+           let diskLang = diskGlobal.language, !diskLang.isEmpty {
+            let lang = AppLanguage.fromConfigString(diskLang)
+            self.currentLanguage = lang
+            UserDefaults.standard.set(lang.rawValue, forKey: userDefaultsKey)
+            PhotoolsEngine.shared.setLanguage(lang.toConfigString)
+            return
+        }
+
+        // 2. 次优先级：检查本地 UserDefaults 缓存
         if let saved = UserDefaults.standard.string(forKey: userDefaultsKey),
            let lang = AppLanguage(rawValue: saved) {
             self.currentLanguage = lang
+            PhotoolsEngine.shared.setLanguage(lang.toConfigString)
         } else {
+            // 3. 兜底回退：跟随系统语言
             self.currentLanguage = .system
+            PhotoolsEngine.shared.setLanguage(AppLanguage.system.toConfigString)
         }
     }
 
@@ -394,6 +422,8 @@ public final class LanguageManager: ObservableObject {
         .sectionGuide: "使用指南",
 
         // Settings Tabs
+        .tabSession: "会话设置",
+        .tabGlobal: "全局设置",
         .tabGeneral: "通用与路径",
         .tabPlugins: "插件与策略",
 
@@ -403,8 +433,10 @@ public final class LanguageManager: ObservableObject {
         .baseDirectory: "基础工作根目录 (Base Directory)",
         .flatMode: "扁平/直接目录模式 (在指定目录下直接扫描并保存)",
         .flatModeDesc: "忽略 Inbox/Processed 分层，直接在源目录下原地识别与规范化处理",
-        .sourceDirectory: "待处理照片源目录 (默认 Inbox)",
-        .gpxDirectory: "GPX 轨迹目录 (默认 ~/.config/gpx)",
+        .gpxDirectory: "全局 GPX 轨迹库目录 (默认 ~/.config/gpx)",
+        .logDirectory: "全局日志与报告中心目录 (默认 ~/.logs/photools)",
+        .globalPreferences: "全局偏好设置 (持久化至 plugins.json)",
+        .sessionSettings: "当前会话执行设置 (退出即过期)",
         .processedDirectory: "规范归档目录 (默认 Processed)",
         .performanceSection: "性能与格式策略",
         .rawExtensions: "识别的 RAW 扩展名列表 (逗号分隔)",
@@ -412,6 +444,7 @@ public final class LanguageManager: ObservableObject {
         .companionExtensionsDesc: "与 RAW/JPG 配套归档的伴随格式 (如 wav, acr, exf)",
         .concurrencyWorkers: "并发工作协程数 (Workers)",
         .testBackupMode: "测试快照备份 (执行前自动备份至 Inbox_bak)",
+        .testBackupDesc: "执行流水线前将源目录照片完整备份至 Inbox_bak，保障原始资产安全",
 
         // Settings Plugins & Policies
         .sidecarPolicy: "元数据写入策略 (Sidecar Policy)",
@@ -419,7 +452,7 @@ public final class LanguageManager: ObservableObject {
         .policySmart: "智能分层模式 (默认推荐)",
         .policySmartDesc: "GPS 修正写入 RAW EXIF 头部与 JPG 并同步 XMP 溯源指纹；中文地名/标签严格不碰 RAW，写入 .nef.xmp 侧车与 JPG 内嵌 (最佳生态互通与 RAW 安全)",
         .policyReadOnly: "智能分层模式 (兼容别名)",
-        .policyReadOnlyDesc: "GPS 修正写入 RAW EXIF 头部与 JPG 并同步 XMP 溯源指纹；中文地名/标签严格不碰 RAW，写入 .nef.xmp 侧车与 JPG 内嵌",
+        .policyReadOnlyDesc: "智能分层模式的兼容别名 (行为与 smart 完全一致，详见 smart 策略说明)",
         .policySidecarOnly: "纯 XMP 侧车模式",
         .policySidecarOnlyDesc: "RAW 与 JPG 均不触碰原图，所有 GPS 与地名标签严格输出为独立的 .xmp 侧车",
         .policyEmbedAndSidecar: "原图与 XMP 双写同步",
@@ -503,6 +536,13 @@ public final class LanguageManager: ObservableObject {
         .viewFullLog: "查看完整日志",
         .pendingReport: "待补报告",
         .waitingForTask: "等待任务启动...\n",
+        .logConsoleStarting: "🚀 开始执行自动化处理流水线 (In-Process Engine)...",
+        .logConsoleFinishedSummary: "🎉 流水线执行完毕！成功: %d, 跳过: %d, 失败: %d, 耗时: %@s",
+        .logConsoleWarmupStart: "⚡ [photools Engine] 正在进程内异步预热四大核心插件与离线 3D KD-Tree 索引...",
+        .logConsoleWarmupReady: "🚀 [photools Engine] 插件全生命周期常驻内存就绪！\n",
+        .logConsoleCliStarting: "🚀 开始执行外部 CLI 流水线...",
+        .logConsoleCliModeNotice: "ℹ️ 运行于 CLI 子进程模式 (未检测到 libphotools.dylib)",
+        .logConsoleInterrupted: "🛑 任务已被手动中断。",
 
         // Asset List & Filter
         .filterAll: "全部",
@@ -717,6 +757,8 @@ public final class LanguageManager: ObservableObject {
         .sectionGuide: "User Guides",
 
         // Settings Tabs
+        .tabSession: "Session Settings",
+        .tabGlobal: "Global Settings",
         .tabGeneral: "General & Paths",
         .tabPlugins: "Plugins & Policies",
 
@@ -726,8 +768,10 @@ public final class LanguageManager: ObservableObject {
         .baseDirectory: "Base Workspace Directory",
         .flatMode: "Flat / In-Place Mode (Scan & Process in Place)",
         .flatModeDesc: "Ignore Inbox/Processed hierarchy; scan and normalize in source directory directly",
-        .sourceDirectory: "Source Directory (Default Inbox)",
-        .gpxDirectory: "GPX Directory (Default ~/.config/gpx)",
+        .gpxDirectory: "Global GPX Tracks Directory (Default ~/.config/gpx)",
+        .logDirectory: "Global Logs & Reports Directory (Default ~/.logs/photools)",
+        .globalPreferences: "Global Preferences (Persistent in plugins.json)",
+        .sessionSettings: "Session Execution Settings (Transient / Pre-Flight)",
         .processedDirectory: "Processed Directory (Default Processed)",
         .performanceSection: "Performance & Formats",
         .rawExtensions: "Recognized RAW Extensions (Comma Separated)",
@@ -735,6 +779,7 @@ public final class LanguageManager: ObservableObject {
         .companionExtensionsDesc: "Companion formats archived with RAW/JPG (e.g. wav, acr, exf)",
         .concurrencyWorkers: "Worker Concurrency",
         .testBackupMode: "Test Snapshot Backup (Auto-backup to Inbox_bak)",
+        .testBackupDesc: "Backup raw photos to Inbox_bak before execution for safety",
 
         // Settings Plugins & Policies
         .sidecarPolicy: "Metadata Writing Policy (Sidecar Policy)",
@@ -742,7 +787,7 @@ public final class LanguageManager: ObservableObject {
         .policySmart: "Smart Tiered Mode (Default Recommended)",
         .policySmartDesc: "Corrected GPS written to RAW EXIF & JPG with XMP provenance; Location tags strictly written to .xmp & embedded in JPG without touching RAW.",
         .policyReadOnly: "Smart Tiered Mode (Legacy Alias)",
-        .policyReadOnlyDesc: "Corrected GPS written to RAW EXIF & JPG with XMP provenance; Location tags strictly written to .xmp & embedded in JPG without touching RAW.",
+        .policyReadOnlyDesc: "Legacy compatibility alias for smart tiered mode (identical to smart policy)",
         .policySidecarOnly: "Sidecar Only Mode",
         .policySidecarOnlyDesc: "Neither RAW nor JPG is modified; all GPS and reverse geocoded tags are written to standalone .xmp",
         .policyEmbedAndSidecar: "Embed & Sidecar Dual Sync",
@@ -826,6 +871,13 @@ public final class LanguageManager: ObservableObject {
         .viewFullLog: "View Full Log",
         .pendingReport: "Pending Report",
         .waitingForTask: "Waiting for pipeline task to start...\n",
+        .logConsoleStarting: "🚀 Starting automated pipeline (In-Process Engine)...",
+        .logConsoleFinishedSummary: "🎉 Pipeline finished! Succeeded: %d, Skipped: %d, Failed: %d, Duration: %@s",
+        .logConsoleWarmupStart: "⚡ [photools Engine] Pre-warming core capabilities and 3D KD-Tree index in memory...",
+        .logConsoleWarmupReady: "🚀 [photools Engine] Capabilities permanently ready in memory!\n",
+        .logConsoleCliStarting: "🚀 Starting external CLI pipeline...",
+        .logConsoleCliModeNotice: "ℹ️ Running in CLI sub-process mode (libphotools.dylib not found)",
+        .logConsoleInterrupted: "🛑 Task manually interrupted.",
 
         // Asset List & Filter
         .filterAll: "All",

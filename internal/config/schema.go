@@ -37,20 +37,21 @@ type OptionSpec = domain.OptionSpec
 
 // GlobalSettings 封装整条流水线的全局环境与调度配置
 type GlobalSettings struct {
-	BaseDir             string   `json:"base_dir"`
-	SourceDir           string   `json:"source_dir"`
-	TargetDir           string   `json:"target_dir"`
-	GPXDir              string   `json:"gpx_dir"`              // GPX 轨迹目录 (默认 ~/.config/gpx)
-	LogDir              string   `json:"log_dir"`              // 全局日志与报告目录 (默认 ~/.logs/photools)
-	FlatMode            bool     `json:"flat_mode"`            // 忽略传统分层目录结构，在指定目录下直接扫描并原地保存/处理
-	SidecarPolicy       string   `json:"sidecar_policy"`       // 侧车写入策略: read_only, sidecar_only, embed_and_sidecar, embed_only
-	SidecarOnly         bool     `json:"sidecar_only"`         // 仅生成/修改 {file}.xmp 侧车文件 (向后兼容标志)
-	CompanionExtensions []string `json:"companion_extensions"` // 伴随文件扩展名白名单 (如 wav, acr, exf)
-	RawExtensions       []string `json:"raw_extensions"`       // RAW 格式白名单
-	Workers             int      `json:"workers"`              // 并发处理协程数
-	AllowNoGPS          bool     `json:"allow_no_gps"`         // 软降级容错：无 GPS 坐标时允许跳过地名写入直接归档
-	TestBackup          bool     `json:"test_backup"`          // 处理前是否快照备份源文件
-	BackupDir           string   `json:"backup_dir"`           // 自定义备份目录
+	BaseDir             string   `json:"base_dir,omitempty"`
+	SourceDir           string   `json:"source_dir,omitempty"`
+	TargetDir           string   `json:"target_dir,omitempty"`
+	GPXDir              string   `json:"gpx_dir,omitempty"`              // GPX 轨迹目录 (默认 ~/.config/gpx)
+	LogDir              string   `json:"log_dir,omitempty"`              // 全局日志与报告目录 (默认 ~/.logs/photools)
+	FlatMode            bool     `json:"flat_mode,omitempty"`            // 忽略传统分层目录结构，在指定目录下直接扫描并原地保存/处理
+	SidecarPolicy       string   `json:"sidecar_policy,omitempty"`       // 侧车写入策略: read_only, sidecar_only, embed_and_sidecar, embed_only
+	SidecarOnly         bool     `json:"sidecar_only,omitempty"`         // 仅生成/修改 {file}.xmp 侧车文件 (向后兼容标志)
+	CompanionExtensions []string `json:"companion_extensions,omitempty"` // 伴随文件扩展名白名单 (如 wav, acr, exf)
+	RawExtensions       []string `json:"raw_extensions,omitempty"`       // RAW 格式白名单
+	Workers             int      `json:"workers,omitempty"`              // 并发处理协程数
+	AllowNoGPS          bool     `json:"allow_no_gps,omitempty"`         // 软降级容错：无 GPS 坐标时允许跳过地名写入直接归档
+	TestBackup          bool     `json:"test_backup,omitempty"`          // 处理前是否快照备份源文件
+	BackupDir           string   `json:"backup_dir,omitempty"`           // 自定义备份目录
+	Language            string   `json:"language,omitempty"`             // 界面与补全语言: zh-CN, en-US
 }
 
 // SessionConfig 封装当前运行时会话的全部配置（全局配置 + 各插件独立配置）
@@ -111,6 +112,7 @@ func DefaultGlobalSettings(baseDir ...string) GlobalSettings {
 		AllowNoGPS:          false,
 		TestBackup:          false,
 		BackupDir:           filepath.Join(bDir, "Inbox_bak"),
+		Language:            "en-US",
 	}
 }
 
@@ -124,6 +126,31 @@ func NewSessionConfig(cfg *PluginsConfig, baseDir ...string) *SessionConfig {
 	if cfg == nil {
 		def := DefaultPluginsConfig()
 		cfg = &def
+	} else {
+		if cfg.Global.Language != "" {
+			sc.Global.Language = cfg.Global.Language
+		}
+		if cfg.Global.BaseDir != "" && len(baseDir) == 0 {
+			sc.Global.BaseDir = cfg.Global.BaseDir
+		}
+		if cfg.Global.SourceDir != "" {
+			sc.Global.SourceDir = cfg.Global.SourceDir
+		}
+		if cfg.Global.SidecarPolicy != "" {
+			sc.Global.SidecarPolicy = cfg.Global.SidecarPolicy
+		}
+		if len(cfg.Global.CompanionExtensions) > 0 {
+			sc.Global.CompanionExtensions = cfg.Global.CompanionExtensions
+		}
+		if len(cfg.Global.RawExtensions) > 0 {
+			sc.Global.RawExtensions = cfg.Global.RawExtensions
+		}
+		if cfg.Global.Workers > 0 {
+			sc.Global.Workers = cfg.Global.Workers
+		}
+		sc.Global.FlatMode = cfg.Global.FlatMode
+		sc.Global.AllowNoGPS = cfg.Global.AllowNoGPS
+		sc.Global.TestBackup = cfg.Global.TestBackup
 	}
 
 	for _, p := range cfg.Plugins {
@@ -204,11 +231,33 @@ func (s *SessionConfig) SetPluginOption(pluginID domain.CapabilityID, key string
 	s.Plugins[pluginID] = p
 }
 
+// SetPluginEnabled 设置指定插件的启用状态
+func (s *SessionConfig) SetPluginEnabled(pluginID domain.CapabilityID, enabled bool) {
+	p, ok := s.Plugins[pluginID]
+	if !ok {
+		p = PluginOpt{
+			ID:      pluginID,
+			Options: make(map[string]interface{}),
+		}
+	}
+	p.Enabled = enabled
+	s.Plugins[pluginID] = p
+}
+
 // ApplyToPluginsConfig 将当前会话中的插件优先级与选项同步回持久化配置结构
 func (s *SessionConfig) ApplyToPluginsConfig(cfg *PluginsConfig) {
 	if cfg == nil {
 		return
 	}
+	// 仅将真正的全局持久化项回写到持久化配置中，绝不将临时会话项 (BaseDir/SourceDir/FlatMode/BackupDir 等) 污染写盘
+	cfg.Global.Language = s.Global.Language
+	cfg.Global.GPXDir = s.Global.GPXDir
+	cfg.Global.LogDir = s.Global.LogDir
+	cfg.Global.SidecarPolicy = s.Global.SidecarPolicy
+	cfg.Global.CompanionExtensions = s.Global.CompanionExtensions
+	cfg.Global.RawExtensions = s.Global.RawExtensions
+	cfg.Global.Workers = s.Global.Workers
+
 	for i := range cfg.Plugins {
 		p := &cfg.Plugins[i]
 		if opt, ok := s.Plugins[p.ID]; ok {
@@ -229,40 +278,40 @@ func GlobalOptionSpecs() []OptionSpec {
 	return []OptionSpec{
 		{
 			Key:          "base_dir",
-			Name:         "工作区根目录 (BaseDir)",
-			Description:  "基础工作目录，包含 Inbox/Processed/Logs 等子目录",
+			NameKey:      "optBaseDirName",
+			DescKey:      "optBaseDirDesc",
 			Type:         TypeString,
 			Scope:        ScopeGlobal,
 			DefaultValue: "~/Pictures/GPS",
 		},
 		{
 			Key:          "gpx_dir",
-			Name:         "GPX 轨迹目录 (GPXDir)",
-			Description:  "GPX 轨迹文件所在目录（默认 ~/.config/gpx）",
+			NameKey:      "optGpxDirName",
+			DescKey:      "optGpxDirDesc",
 			Type:         TypeString,
 			Scope:        ScopeGlobal,
 			DefaultValue: "~/.config/gpx",
 		},
 		{
 			Key:          "source_dir",
-			Name:         "扫描源目录 (SourceDir)",
-			Description:  "照片扫描源目录（默认 <BaseDir>/Inbox 或 Flat 模式下的指定目录）",
+			NameKey:      "optSourceDirName",
+			DescKey:      "optSourceDirDesc",
 			Type:         TypeString,
 			Scope:        ScopeGlobal,
 			DefaultValue: "<BaseDir>/Inbox",
 		},
 		{
 			Key:          "flat_mode",
-			Name:         "扁平原地模式 (Flat Mode)",
-			Description:  "忽略传统 Inbox/Processed 分层结构，直接扫描指定目录所有照片并原地保存/处理",
+			NameKey:      "optFlatModeName",
+			DescKey:      "optFlatModeDesc",
 			Type:         TypeBool,
 			Scope:        ScopeGlobal,
 			DefaultValue: false,
 		},
 		{
 			Key:          "sidecar_policy",
-			Name:         "元数据与侧车写入策略 (Sidecar Policy)",
-			Description:  "控制元数据写入目标：smart(智能分层模式：GPS修正写RAW/JPG/XMP，地名写XMP/JPG，默认推荐)、sidecar_only(纯XMP侧车)、embed_and_sidecar(双写同步)、embed_only(纯原图内嵌)",
+			NameKey:      "optSidecarPolicyName",
+			DescKey:      "optSidecarPolicyDesc",
 			Type:         TypeChoice,
 			Choices:      []string{string(domain.PolicySmart), string(domain.PolicySidecarOnly), string(domain.PolicyEmbedAndSidecar), string(domain.PolicyEmbedOnly)},
 			Scope:        ScopeGlobal,
@@ -270,51 +319,60 @@ func GlobalOptionSpecs() []OptionSpec {
 		},
 		{
 			Key:          "sidecar_only",
-			Name:         "仅生成 XMP 侧车文件 (Sidecar Only / 兼容选项)",
-			Description:  "元数据变更仅写入 {file}.xmp 侧车文件，严格保护不修改原始 RAW/JPG 文件（等价于 sidecar_policy=sidecar_only）",
+			NameKey:      "optSidecarOnlyName",
+			DescKey:      "optSidecarOnlyDesc",
 			Type:         TypeBool,
 			Scope:        ScopeGlobal,
 			DefaultValue: false,
 		},
 		{
 			Key:          "companion_extensions",
-			Name:         "伴随文件扩展名白名单",
-			Description:  "与主照片关联的伴随文件扩展名（如 wav, acr, exf，归档时整体原子移动）",
+			NameKey:      "optCompanionExtsName",
+			DescKey:      "optCompanionExtsDesc",
 			Type:         TypeString,
 			Scope:        ScopeGlobal,
 			DefaultValue: "wav,acr,exf",
 		},
 		{
 			Key:          "raw_extensions",
-			Name:         "RAW 格式白名单",
-			Description:  "可识别为主决策权威源的 RAW 格式文件扩展名（逗号分隔）",
+			NameKey:      "optRawExtsName",
+			DescKey:      "optRawExtsDesc",
 			Type:         TypeString,
 			Scope:        ScopeGlobal,
 			DefaultValue: "nef,cr3,arw,dng,raf,rw2,orf",
 		},
 		{
 			Key:          "workers",
-			Name:         "并发处理协程数",
-			Description:  "并发处理拍摄单元的 Worker 数量（默认 CPU 核心数）",
+			NameKey:      "optWorkersName",
+			DescKey:      "optWorkersDesc",
 			Type:         TypeInt,
 			Scope:        ScopeGlobal,
 			DefaultValue: runtime.NumCPU(),
 		},
 		{
 			Key:          "allow_no_gps",
-			Name:         "无 GPS 软降级容错",
-			Description:  "彻底无 GPS 坐标的照片在逆地理阶段良性跳过，安全进入拍摄日期归档",
+			NameKey:      "optAllowNoGpsName",
+			DescKey:      "optAllowNoGpsDesc",
 			Type:         TypeBool,
 			Scope:        ScopeGlobal,
 			DefaultValue: false,
 		},
 		{
 			Key:          "test_backup",
-			Name:         "测试安全快照备份",
-			Description:  "在流水线执行前，自动将源目录照片全量备份至 Inbox_bak 目录",
+			NameKey:      "optTestBackupName",
+			DescKey:      "optTestBackupDesc",
 			Type:         TypeBool,
 			Scope:        ScopeGlobal,
 			DefaultValue: false,
+		},
+		{
+			Key:          "language",
+			NameKey:      "optLanguageName",
+			DescKey:      "optLanguageDesc",
+			Type:         TypeChoice,
+			Choices:      []string{"zh-CN", "en-US"},
+			Scope:        ScopeGlobal,
+			DefaultValue: "zh-CN",
 		},
 	}
 }
@@ -326,8 +384,8 @@ func PluginOptionSpecs(id domain.CapabilityID) []OptionSpec {
 		return []OptionSpec{
 			{
 				Key:          "geosync",
-				Name:         "时钟偏差偏移 (Geosync)",
-				Description:  "相机时钟与 GPS 轨迹的时间偏差补偿（如 0, +00:00:05, -00:01:00）",
+				NameKey:      "optGeosyncName",
+				DescKey:      "optGeosyncDesc",
 				Type:         TypeString,
 				Scope:        ScopePlugin,
 				PluginID:     domain.CapGPXMatching,
@@ -338,8 +396,8 @@ func PluginOptionSpecs(id domain.CapabilityID) []OptionSpec {
 		return []OptionSpec{
 			{
 				Key:          "window",
-				Name:         "智能推算时间窗口 (Interpolate Window)",
-				Description:  "根据前后邻近照片时间权重推算 GPS 的最大允许时间间隔 (如 15m, 30m, 1h, 2h)",
+				NameKey:      "optWindowName",
+				DescKey:      "optWindowDesc",
 				Type:         TypeChoice,
 				Scope:        ScopePlugin,
 				PluginID:     domain.CapGPSInterpolate,
@@ -358,8 +416,8 @@ func PluginOptionSpecs(id domain.CapabilityID) []OptionSpec {
 		return []OptionSpec{
 			{
 				Key:          "language",
-				Name:         "地名元数据语言",
-				Description:  "写入照片元数据的中文/本地地名语言格式 (默认 zh-CN)",
+				NameKey:      "optGeocodeLangName",
+				DescKey:      "optGeocodeLangDesc",
 				Type:         TypeString,
 				Scope:        ScopePlugin,
 				PluginID:     domain.CapReverseGeocode,
@@ -370,8 +428,8 @@ func PluginOptionSpecs(id domain.CapabilityID) []OptionSpec {
 		return []OptionSpec{
 			{
 				Key:          "in_place",
-				Name:         "原地重命名模式 (In-Place)",
-				Description:  "在源目录内直接规范化重命名，不建立 Processed/YYYY/MMDD/ 子目录",
+				NameKey:      "optInPlaceName",
+				DescKey:      "optInPlaceDesc",
 				Type:         TypeBool,
 				Scope:        ScopePlugin,
 				PluginID:     domain.CapDateArchive,
@@ -379,8 +437,8 @@ func PluginOptionSpecs(id domain.CapabilityID) []OptionSpec {
 			},
 			{
 				Key:          "naming_template",
-				Name:         "规范化重命名模板",
-				Description:  "照片重命名模板（如 {PREFIX}_{YYYY-MM-DD}_{SEQ}{SUFFIX}）",
+				NameKey:      "optNamingTemplateName",
+				DescKey:      "optNamingTemplateDesc",
 				Type:         TypeString,
 				Scope:        ScopePlugin,
 				PluginID:     domain.CapDateArchive,

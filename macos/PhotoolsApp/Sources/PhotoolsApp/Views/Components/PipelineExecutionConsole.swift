@@ -267,15 +267,6 @@ public struct PipelineExecutionConsole: View {
                     .buttonStyle(.bordered)
                     .pulseOnHover(scale: 1.04, glowColor: .orange)
                 }
-
-                Button {
-                    store.resetTaskStatus()
-                } label: {
-                    Label(lang.text(.clearStatus), systemImage: "arrow.counterclockwise")
-                        .font(.caption)
-                }
-                .buttonStyle(.bordered)
-                .pulseOnHover(scale: 1.04, glowColor: .blue)
             }
         }
         .padding(12)

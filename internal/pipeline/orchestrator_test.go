@@ -271,6 +271,7 @@ func TestPipelineOrchestrator_GPSInterpolate_AutoHealsMissingTrack(t *testing.T)
 		BaseDir:           tempDir,
 		SourceDir:         inbox,
 		ProcessedDir:      processed,
+		LogDir:            filepath.Join(tempDir, "logs"),
 		Runner:            runner,
 		EnableInterpolate: true,
 		InterpolateWindow: 15 * time.Minute,
@@ -313,6 +314,7 @@ func TestPipelineOrchestrator_AllowNoGPS_SoftDegradation(t *testing.T) {
 		BaseDir:       tempDir,
 		SourceDir:     inbox,
 		ProcessedDir:  processed,
+		LogDir:        filepath.Join(tempDir, "logs"),
 		Runner:        runner,
 		EnableGeocode: true,
 		AllowNoGPS:    true, // 开启软降级

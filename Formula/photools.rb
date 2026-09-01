@@ -1,25 +1,25 @@
 class Photools < Formula
   desc "Turn GPX tracks into GPS-tagged, location-aware photo libraries with offline geocoding"
   homepage "https://github.com/vincentchyu/photools"
-  version "0.0.3"
+  version "0.1.0"
   license "MIT"
 
   depends_on "exiftool"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/vincentchyu/photools/releases/download/v0.0.3/photools-darwin-arm64"
-      sha256 "9ddea6edde7261d94fb4b51532aa6cb766372cd3b89fe07f17494ccd55bf22ed"
+      url "https://github.com/vincentchyu/photools/releases/download/v0.1.0/photools-darwin-arm64"
+      sha256 "68581d17f6e3a2791e0a7f2d9e5730b7bc2e6983c258d4a4101b5a5e40c54168"
     else
-      url "https://github.com/vincentchyu/photools/releases/download/v0.0.3/photools-darwin-amd64"
-      sha256 "5120ae4751de765722c81e3421fe21a7f5ae977b3b80e9580c203cc7d98bcfd0"
+      url "https://github.com/vincentchyu/photools/releases/download/v0.1.0/photools-darwin-amd64"
+      sha256 "0ea2ebf7a59c12e1a3ec70d612058c6b4e9f374758505958ca406d004fb03e5a"
     end
   end
 
   on_linux do
     if Hardware::CPU.intel?
-      url "https://github.com/vincentchyu/photools/releases/download/v0.0.3/photools-linux-amd64"
-      sha256 "2deea0ab515349fe2d7b687146fc2ff6d026b07245c647524b5ff35ac7bf8181"
+      url "https://github.com/vincentchyu/photools/releases/download/v0.1.0/photools-linux-amd64"
+      sha256 "58d5873f2c9b21d431ad7efbc9ab0db209b7abb7357b799bdc7862fd1e97c497"
     end
   end
 

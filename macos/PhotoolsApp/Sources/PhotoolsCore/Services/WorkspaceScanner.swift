@@ -82,6 +82,7 @@ public struct WorkspaceScanner: Sendable {
         baseDirectory: String,
         sourceDirectory: String = "",
         gpxDirectory: String = "",
+        logDirectory: String = "",
         rawExtensions: [String] = ["nef", "cr3", "arw", "dng", "raf", "rw2", "orf"]
     ) throws -> WorkspaceSummary {
         let fm = FileManager.default
@@ -98,12 +99,17 @@ public struct WorkspaceScanner: Sendable {
             effectiveGPXDir = (gpxDirectory as NSString).expandingTildeInPath
         }
         let processedDirectory = (baseDirectory as NSString).appendingPathComponent("Processed")
-        let defaultLogDir = ("~/.logs/photools" as NSString).expandingTildeInPath
-        var logsDirectory = defaultLogDir
+        let effectiveLogDir: String
+        if !logDirectory.trimmingCharacters(in: .whitespaces).isEmpty {
+            effectiveLogDir = (logDirectory as NSString).expandingTildeInPath
+        } else {
+            effectiveLogDir = ("~/.logs/photools" as NSString).expandingTildeInPath
+        }
+        var logsDirectory = effectiveLogDir
         var logFilePath = (logsDirectory as NSString).appendingPathComponent("photools_latest.log")
         var pendingReportPath = (logsDirectory as NSString).appendingPathComponent("inbox_pending_report_latest.md")
         
-        // 查找最新的日志文件: 优先全局 ~/.logs/photools/photools_latest.log，若无则优雅兼容工作区本地 Logs/
+        // 查找最新的日志文件: 优先全局/指定的日志目录，若无则优雅兼容工作区本地 Logs/
         if !fm.fileExists(atPath: logFilePath) {
             let localLogsDir = (baseDirectory as NSString).appendingPathComponent("Logs")
             let localLog = (localLogsDir as NSString).appendingPathComponent("photools_latest.log")

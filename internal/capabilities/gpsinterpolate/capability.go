@@ -11,6 +11,7 @@ import (
 
 	"github.com/vincentchyu/photools/internal/domain"
 	"github.com/vincentchyu/photools/internal/exiftool"
+	"github.com/vincentchyu/photools/internal/i18n"
 )
 
 // Config 封装 GPS 智能插值插件配置
@@ -61,11 +62,11 @@ func (c *Capability) ID() domain.CapabilityID {
 }
 
 func (c *Capability) Name() string {
-	return "GPS 智能邻近推断与时间插值"
+	return i18n.T("capInterpolateName")
 }
 
 func (c *Capability) Description() string {
-	return "根据同批次前后邻近照片的 GPS 坐标与拍摄时间权重，自动为无轨迹照片线性推算并补全 GPS"
+	return i18n.T("capInterpolateDesc")
 }
 
 func (c *Capability) RequiredStage() domain.PipelineStage {
@@ -81,8 +82,8 @@ func (c *Capability) SupportedOptions() []domain.OptionSpec {
 	return []domain.OptionSpec{
 		{
 			Key:          "window",
-			Name:         "推算最大时间窗口 (Interpolate Window)",
-			Description:  "前后照片时间差在该窗口内时进行智能插值补全 (如 15m, 30m, 1h, 2h, 4h)",
+			NameKey:      "optWindowName",
+			DescKey:      "optWindowDesc",
 			Type:         domain.OptionTypeDuration,
 			DefaultValue: "15m",
 			Choices:      []string{"15m", "30m", "1h", "2h", "4h"},
@@ -125,8 +126,8 @@ func (c *Capability) Init(ctx context.Context, report func(domain.PluginInitRepo
 					domain.PluginInitReport{
 						PluginID: c.ID(),
 						Name:     c.Name(),
-						Stage:    "环境自检",
-						Message:  "正在检查 ExifTool 核心引擎...",
+						Stage:    i18n.T("stageInit"),
+						Message:  i18n.T("logInterpolateSelfCheckChecking"),
 						Percent:  0.5,
 						Status:   domain.HealthReady,
 					},
@@ -139,8 +140,8 @@ func (c *Capability) Init(ctx context.Context, report func(domain.PluginInitRepo
 				c.lastReport = domain.PluginInitReport{
 					PluginID: c.ID(),
 					Name:     c.Name(),
-					Stage:    "自检失败",
-					Message:  fmt.Sprintf("ExifTool 异常: %v", err),
+					Stage:    i18n.T("stageInit"),
+					Message:  fmt.Sprintf("ExifTool: %v", err),
 					Percent:  1.0,
 					Status:   domain.HealthFailed,
 					Err:      err,
@@ -152,8 +153,8 @@ func (c *Capability) Init(ctx context.Context, report func(domain.PluginInitRepo
 			c.lastReport = domain.PluginInitReport{
 				PluginID: c.ID(),
 				Name:     c.Name(),
-				Stage:    "自检完成",
-				Message:  fmt.Sprintf("GPS 插值引擎就绪 (推算窗口: %s, ExifTool v%s)", c.maxTimeGap, ver),
+				Stage:    i18n.T("statusReady"),
+				Message:  fmt.Sprintf(i18n.T("logInterpolateSelfCheckReady"), c.maxTimeGap, ver),
 				Percent:  1.0,
 				Status:   domain.HealthReady,
 			}
@@ -172,7 +173,7 @@ func (c *Capability) PlanPrecheck(ctx context.Context, actx *domain.AssetContext
 	if primary == "" {
 		return domain.CapabilityPlan{
 			CanProcess: false,
-			ActionDesc: "跳过（无主文件）",
+			ActionDesc: i18n.T("actionInterpolateSkipNoPrimary"),
 		}
 	}
 
@@ -182,7 +183,7 @@ func (c *Capability) PlanPrecheck(ctx context.Context, actx *domain.AssetContext
 		if err != nil {
 			return domain.CapabilityPlan{
 				CanProcess: false,
-				ActionDesc: "读取失败",
+				ActionDesc: i18n.T("tuiMenuHealthFailed"),
 				Warning:    fmt.Sprintf("无法读取主文件元数据: %v", err),
 			}
 		}
@@ -193,7 +194,7 @@ func (c *Capability) PlanPrecheck(ctx context.Context, actx *domain.AssetContext
 	if meta.DateTimeOriginal == "" {
 		return domain.CapabilityPlan{
 			CanProcess: false,
-			ActionDesc: "跳过（缺少拍摄时间）",
+			ActionDesc: i18n.T("actionInterpolateSkipMissingTime"),
 			Warning:    "未检测到 DateTimeOriginal 拍摄时间",
 		}
 	}
@@ -202,13 +203,13 @@ func (c *Capability) PlanPrecheck(ctx context.Context, actx *domain.AssetContext
 	if meta.HasGPS() || actx.HasGPS {
 		return domain.CapabilityPlan{
 			CanProcess: false,
-			ActionDesc: "跳过（已有 GPS 坐标）",
+			ActionDesc: i18n.T("actionInterpolateSkipHasGPS"),
 		}
 	}
 
 	return domain.CapabilityPlan{
 		CanProcess: true,
-		ActionDesc: fmt.Sprintf("智能推算 GPS (窗口 %s)", c.maxTimeGap),
+		ActionDesc: fmt.Sprintf(i18n.T("actionInterpolateEstimate"), c.maxTimeGap),
 	}
 }
 
@@ -244,7 +245,7 @@ func (c *Capability) buildAnchorIndex(batch []*domain.AssetContext, sendEvent fu
 			domain.ProgressEvent{
 				Stage:   c.RequiredStage(),
 				Level:   domain.LevelInfo,
-				Message: fmt.Sprintf("⚡ [GPS智能插值] 正在为 %d 组资产秒级提取元数据并构建时间索引...", len(batch)),
+				Message: fmt.Sprintf(i18n.T("logInterpolateBuildingIndex"), len(batch)),
 			},
 		)
 	}
@@ -498,7 +499,7 @@ func (c *Capability) ExecuteProcess(
 						Stage: c.RequiredStage(),
 						Level: domain.LevelWarn,
 						Message: fmt.Sprintf(
-							"⚠️ [GPS智能插值] 窗口 %s 内无邻近 GPS 锚点，跳过插值（允许降级归档）：%s", c.maxTimeGap,
+							i18n.T("logInterpolateSkipNoAnchor"), c.maxTimeGap,
 							actx.Asset.DisplayName(),
 						),
 						Asset: &actx.Asset,
@@ -629,7 +630,7 @@ func (c *Capability) ExecuteProcess(
 				Stage: c.RequiredStage(),
 				Level: domain.LevelInfo,
 				Message: fmt.Sprintf(
-					"📍 [GPS智能插值] 成功补全坐标：%s (%s, %.4f, %.4f)", actx.Asset.DisplayName(), inferMethod,
+					i18n.T("logInterpolateSuccess"), actx.Asset.DisplayName(), inferMethod,
 					targetLat, targetLon,
 				),
 				Asset: &actx.Asset,

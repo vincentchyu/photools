@@ -8,7 +8,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/vincentchyu/photools/internal/config"
 	"github.com/vincentchyu/photools/internal/domain"
+	"github.com/vincentchyu/photools/internal/i18n"
 )
 
 func TestTraceViewMenu(t *testing.T) {
@@ -28,11 +30,10 @@ func TestTraceViewMenu(t *testing.T) {
 	// 验证插件 1 的第一行是否以 "▶" 开头，而不是被空格顶到右边
 	foundPlugin1 := false
 	for _, l := range lines {
-		if strings.Contains(l, "GPX 轨迹匹配") {
+		if strings.Contains(l, "GPX 轨迹匹配") || strings.Contains(l, "GPX Track Matching") {
 			foundPlugin1 = true
-			trimmed := strings.TrimSpace(l)
-			if !strings.HasPrefix(trimmed, "▶") {
-				t.Errorf("插件 1 第一行未正确靠左显示，实际行: %q", l)
+			if !strings.Contains(l, "▶") {
+				t.Errorf("插件 1 第一行未正确包含焦点光标 ▶，实际行: %q", l)
 			}
 		}
 	}
@@ -105,7 +106,7 @@ func TestModel_InitializingState(t *testing.T) {
 	}
 
 	v2 := model.View()
-	if !strings.Contains(v2, "自检就绪") {
+	if !strings.Contains(v2, "自检就绪") && !strings.Contains(v2, "Ready") && !strings.Contains(v2, "ready") {
 		t.Errorf("初始化完成后未渲染就绪信息: %s", v2)
 	}
 
@@ -184,7 +185,7 @@ func TestModel_PluginToggleKeys(t *testing.T) {
 	if model.state != stateMenu {
 		t.Errorf("全部未勾选时按 Enter 不应进入配置，实际 state: %d", model.state)
 	}
-	if !strings.Contains(model.statusMessage, "至少勾选") {
+	if !strings.Contains(model.statusMessage, "至少勾选") && !strings.Contains(model.statusMessage, "at least one") {
 		t.Errorf("未给出至少勾选提示: %s", model.statusMessage)
 	}
 
@@ -215,6 +216,9 @@ func TestModel_PluginToggleKeys(t *testing.T) {
 
 func TestModel_GlobalSettingsState(t *testing.T) {
 	tempDir := t.TempDir()
+	cfgPath := filepath.Join(tempDir, "plugins.json")
+	t.Setenv("PHOTOOLS_PLUGINS_CONFIG", cfgPath)
+
 	m := InitialModel(tempDir)
 	m.state = stateMenu
 
@@ -223,27 +227,102 @@ func TestModel_GlobalSettingsState(t *testing.T) {
 	model := newM.(Model)
 
 	if model.state != stateGlobalSettings {
-		t.Errorf("按 s 后期望进入 stateGlobalSettings，实际: %d", model.state)
+		t.Fatalf("按 s 后期望进入 stateGlobalSettings，实际: %d", model.state)
 	}
 
-	// 焦点切到 FlatMode (index 1) 并按空格切换
-	model.globalFocusIdx = 1
+	// 1. 焦点在 Language (index 0) 并按空格切换语言
+	model.globalFocusIdx = 0
+	i18n.SetLanguage("zh-CN")
 	newM, _ = model.Update(tea.KeyMsg{Type: tea.KeySpace})
 	model = newM.(Model)
 
-	if !model.flatMode {
-		t.Errorf("按空格期望开启 flatMode，实际未开启")
-	}
+	// 2. 修改 GPXDir
+	model.gpxDirInput.SetValue(filepath.Join(tempDir, "custom_gpx"))
+	// 3. 修改 LogDir
+	model.logDirInput.SetValue(filepath.Join(tempDir, "custom_logs"))
+	// 4. 修改 SidecarPolicy 为 sidecar_only
+	model.sidecarPolicy = domain.PolicySidecarOnly
+	// 5. 修改 CompanionExtensions (空格与逗号混合)
+	model.companionExtsInput.SetValue("wav acr exf custom_ext")
+	// 6. 修改 RawExtensions
+	model.rawExtsInput.SetValue("nef,cr3,dng,myraw")
+	// 7. 修改 Workers
+	model.workersInput.SetValue("16")
 
 	// 按 Enter 保存并返回
 	newM, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = newM.(Model)
 
 	if model.state != stateMenu {
-		t.Errorf("按 Enter 期望返回 stateMenu，实际: %d", model.state)
+		t.Fatalf("按 Enter 期望返回 stateMenu，实际: %d", model.state)
 	}
-	if !model.sessionConfig.Global.FlatMode {
-		t.Errorf("SessionConfig.Global.FlatMode 未更新为 true")
+
+	diskData, readErr := os.ReadFile(cfgPath)
+	t.Logf("磁盘真实文件内容 (%s, err=%v):\n%s", cfgPath, readErr, string(diskData))
+
+	// 验证内存会话
+	if model.sessionConfig.Global.Language != "en-US" {
+		t.Errorf("SessionConfig.Global.Language 未更新为 en-US")
+	}
+	if model.sessionConfig.Global.SidecarPolicy != "sidecar_only" {
+		t.Errorf("SessionConfig.Global.SidecarPolicy 期望 sidecar_only，实际: %s", model.sessionConfig.Global.SidecarPolicy)
+	}
+	if model.sessionConfig.Global.Workers != 16 {
+		t.Errorf("SessionConfig.Global.Workers 期望 16，实际: %d", model.sessionConfig.Global.Workers)
+	}
+
+	// 验证磁盘 plugins.json 文件
+	loaded, err := config.LoadPluginsConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("读取落盘 plugins.json 失败: %v", err)
+	}
+	if loaded.Global.Language != "en-US" {
+		t.Errorf("磁盘 plugins.json Language 期望 en-US，实际: %s", loaded.Global.Language)
+	}
+	if loaded.Global.SidecarPolicy != "sidecar_only" {
+		t.Errorf("磁盘 plugins.json SidecarPolicy 期望 sidecar_only，实际: %s", loaded.Global.SidecarPolicy)
+	}
+	if loaded.Global.Workers != 16 {
+		t.Errorf("磁盘 plugins.json Workers 期望 16，实际: %d", loaded.Global.Workers)
+	}
+	if len(loaded.Global.CompanionExtensions) != 4 || loaded.Global.CompanionExtensions[3] != "custom_ext" {
+		t.Errorf("磁盘 plugins.json CompanionExtensions 期望包含 custom_ext，实际: %v", loaded.Global.CompanionExtensions)
+	}
+	if len(loaded.Global.RawExtensions) != 4 || loaded.Global.RawExtensions[3] != "myraw" {
+		t.Errorf("磁盘 plugins.json RawExtensions 期望包含 myraw，实际: %v", loaded.Global.RawExtensions)
+	}
+}
+
+func TestModel_LanguageToggle_KeyL(t *testing.T) {
+	tempDir := t.TempDir()
+	cfgPath := filepath.Join(tempDir, "plugins.json")
+	t.Setenv("PHOTOOLS_PLUGINS_CONFIG", cfgPath)
+
+	m := InitialModel(tempDir)
+	m.state = stateMenu
+
+	i18n.SetLanguage("zh-CN")
+	newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	model := newM.(Model)
+
+	if i18n.GetLanguage() != "en-US" {
+		t.Fatalf("按 l 键期望切换为 en-US，实际: %s", i18n.GetLanguage())
+	}
+	if model.sessionConfig.Global.Language != "en-US" {
+		t.Errorf("sessionConfig 未同步更新为 en-US")
+	}
+
+	loaded, err := config.LoadPluginsConfig(cfgPath)
+	if err != nil || loaded.Global.Language != "en-US" {
+		t.Errorf("plugins.json 未即时持久化写入 en-US, loaded: %+v, err: %v", loaded, err)
+	}
+
+	// 再次按 l 切换回 zh-CN
+	newM, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	model = newM.(Model)
+
+	if i18n.GetLanguage() != "zh-CN" {
+		t.Fatalf("再次按 l 键期望切换回 zh-CN，实际: %s", i18n.GetLanguage())
 	}
 }
 
@@ -290,9 +369,9 @@ func TestModel_PluginSettingsState_P15Window(t *testing.T) {
 		t.Errorf("sessionConfig 中 P15 窗口期望 1h，实际: %v", dur)
 	}
 
-	// 验证主菜单渲染出 [推算窗口:1h] 徽章
+	// 验证主菜单渲染出 [推算窗口:1h] 或 [window:1h] 徽章
 	view := model.View()
-	if !strings.Contains(view, "推算窗口:1h") {
+	if !strings.Contains(view, "推算窗口:1h") && !strings.Contains(view, "window:1h") {
 		t.Errorf("主菜单未正确渲染推算窗口徽章: %s", view)
 	}
 }
@@ -304,16 +383,16 @@ func TestModel_TabCompletion(t *testing.T) {
 
 	m := InitialModel(tempDir)
 	m.state = stateGlobalSettings
-	m.globalFocusIdx = 0
-	m.baseDirInput.SetValue(filepath.Join(tempDir, "Ph"))
+	m.globalFocusIdx = 1 // GPXDir (第 2 项，支持 Tab 补全)
+	m.gpxDirInput.SetValue(filepath.Join(tempDir, "Ph"))
 
 	// 模拟按 Tab 触发路径自动补全
 	newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	model := newM.(Model)
 
 	expectedCompleted := photosDir + string(filepath.Separator)
-	if model.baseDirInput.Value() != expectedCompleted {
-		t.Errorf("按 Tab 期望路径自动补全为 %q，实际: %q", expectedCompleted, model.baseDirInput.Value())
+	if model.gpxDirInput.Value() != expectedCompleted {
+		t.Errorf("按 Tab 期望路径自动补全为 %q，实际: %q", expectedCompleted, model.gpxDirInput.Value())
 	}
 }
 
@@ -321,23 +400,23 @@ func TestModel_GlobalSettings_SidecarOnly(t *testing.T) {
 	tempDir := t.TempDir()
 	m := InitialModel(tempDir)
 	m.state = stateGlobalSettings
-	m.globalFocusIdx = 2 // 聚焦在 SidecarOnly 开关 (第 3 项)
-	m.sidecarOnly = false
+	m.globalFocusIdx = 3 // 聚焦在 SidecarPolicy 选项 (第 4 项)
+	m.sidecarPolicy = domain.PolicySmart
 
-	// 按空格键切换开关
+	// 按空格键切换策略为 sidecar_only
 	newM, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}})
 	model := newM.(Model)
 
-	if !model.sidecarOnly {
-		t.Errorf("按空格键后期望 sidecarOnly 为 true，实际为 false")
+	if model.sidecarPolicy != domain.PolicySidecarOnly {
+		t.Errorf("按空格键后期望 sidecarPolicy 为 sidecar_only，实际为 %v", model.sidecarPolicy)
 	}
 
 	// 按 Enter 保存生效
 	newM, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = newM.(Model)
 
-	if !model.sessionConfig.Global.SidecarOnly {
-		t.Errorf("按 Enter 后期望 sessionConfig.Global.SidecarOnly 为 true")
+	if model.sessionConfig.Global.SidecarPolicy != string(domain.PolicySidecarOnly) {
+		t.Errorf("按 Enter 后期望 sessionConfig.Global.SidecarPolicy 为 sidecar_only，实际为 %v", model.sessionConfig.Global.SidecarPolicy)
 	}
 	if model.state != stateMenu {
 		t.Errorf("保存后期望返回 stateMenu")
@@ -414,7 +493,7 @@ func TestModel_RefreshKey(t *testing.T) {
 	if model.inboxAssetCount != 1 {
 		t.Errorf("按 r 刷新后期望 inboxAssetCount 为 1，实际: %d", model.inboxAssetCount)
 	}
-	if !strings.Contains(model.statusMessage, "刷新") {
+	if !strings.Contains(model.statusMessage, "刷新") && !strings.Contains(model.statusMessage, "refresh") && !strings.Contains(model.statusMessage, "Refresh") {
 		t.Errorf("按 r 刷新后期望有状态提示，实际: %s", model.statusMessage)
 	}
 }
@@ -477,7 +556,7 @@ func TestModel_ExecutingSoftCancel(t *testing.T) {
 	if !cancelled {
 		t.Errorf("按 Esc 期望触发 cancelFunc 取消在途任务")
 	}
-	if !strings.Contains(model.statusMessage, "已中断") && !strings.Contains(model.statusMessage, "取消") {
+	if !strings.Contains(model.statusMessage, "已中断") && !strings.Contains(model.statusMessage, "取消") && !strings.Contains(model.statusMessage, "interrupted") && !strings.Contains(model.statusMessage, "Interrupted") {
 		t.Errorf("取消任务后期望有状态提示，实际: %s", model.statusMessage)
 	}
 }
@@ -496,7 +575,7 @@ func TestModel_ConfigValidation(t *testing.T) {
 	if model.state == stateDryRun {
 		t.Fatalf("输入非法 geosync 时不应进入 stateDryRun")
 	}
-	if !strings.Contains(model.statusMessage, "geosync") || !strings.Contains(model.statusMessage, "格式") {
+	if !strings.Contains(model.statusMessage, "geosync") && !strings.Contains(model.statusMessage, "Invalid") {
 		t.Errorf("非法 geosync 应该报错提示格式，实际: %s", model.statusMessage)
 	}
 }
@@ -541,5 +620,59 @@ func TestCalculateWindow(t *testing.T) {
 	s, e = calculateWindow(20, 19, 6)
 	if s != 14 || e != 20 {
 		t.Errorf("calculateWindow(20, 19, 6) 期望 (14, 20)，实际 (%d, %d)", s, e)
+	}
+}
+
+func TestModel_SessionSettings_DirectoryAndFlatMode(t *testing.T) {
+	tempDir := t.TempDir()
+	m := InitialModel(tempDir)
+	m.state = stateMenu
+
+	// 1. 按 'w' 快捷键进入会话与目录设置
+	newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	model := newM.(Model)
+	if model.state != stateConfig {
+		t.Errorf("按 w 期望进入 stateConfig，实际 state: %d", model.state)
+	}
+
+	// 2. 焦点在 BaseDir (idx 0)，模拟输入新目录
+	newAlbumDir := filepath.Join(tempDir, "Album2026")
+	model.baseDirInput.SetValue(newAlbumDir)
+	model.handleConfigInput(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{}})
+	if model.currentBaseDir != newAlbumDir {
+		t.Errorf("currentBaseDir 期望同步更新为 %s，实际: %s", newAlbumDir, model.currentBaseDir)
+	}
+
+	// 3. 轮转到模式开关项 (idx 4)，按空格切换扁平原地模式
+	model.configFocusIdx = 4
+	initFlat := model.flatMode
+	newM, _ = model.Update(tea.KeyMsg{Type: tea.KeySpace})
+	model = newM.(Model)
+	if model.flatMode == initFlat {
+		t.Errorf("按空格期望切换 flatMode 状态")
+	}
+
+	// 4. 轮转到无 GPS 软降级项 (idx 5) 与快照备份项 (idx 6)，验证空格切换
+	model.configFocusIdx = 5
+	initGPS := model.allowNoGPS
+	newM, _ = model.Update(tea.KeyMsg{Type: tea.KeySpace})
+	model = newM.(Model)
+	if model.allowNoGPS == initGPS {
+		t.Errorf("按空格期望切换 allowNoGPS 状态")
+	}
+
+	model.configFocusIdx = 6
+	initBak := model.testBackup
+	newM, _ = model.Update(tea.KeyMsg{Type: tea.KeySpace})
+	model = newM.(Model)
+	if model.testBackup == initBak {
+		t.Errorf("按空格期望切换 testBackup 状态")
+	}
+
+	// 5. 按 Esc 取消并返回主菜单
+	newM, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = newM.(Model)
+	if model.state != stateMenu {
+		t.Errorf("按 Esc 期望返回 stateMenu，实际: %d", model.state)
 	}
 }

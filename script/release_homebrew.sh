@@ -60,37 +60,40 @@ echo "• 主仓库:         https://github.com/${REPO}"
 echo "• Tap 仓库:       https://github.com/${TAP_REPO}"
 echo "--------------------------------------------------------"
 
-echo "🔍 正在计算本地预编译二进制文件 SHA256 ..."
-MAC_ARM_SHA=$(shasum -a 256 "${ROOT_DIR}/dist/photools-darwin-arm64" 2>/dev/null | awk '{print $1}' || echo "0000000000000000000000000000000000000000000000000000000000000000")
-MAC_AMD_SHA=$(shasum -a 256 "${ROOT_DIR}/dist/photools-darwin-amd64" 2>/dev/null | awk '{print $1}' || echo "0000000000000000000000000000000000000000000000000000000000000000")
-LINUX_AMD_SHA=$(shasum -a 256 "${ROOT_DIR}/dist/photools-linux-amd64" 2>/dev/null | awk '{print $1}' || echo "0000000000000000000000000000000000000000000000000000000000000000")
-
-echo "  ✅ macOS ARM64 SHA256: ${MAC_ARM_SHA}"
-echo "  ✅ macOS AMD64 SHA256: ${MAC_AMD_SHA}"
-echo "  ✅ Linux AMD64 SHA256: ${LINUX_AMD_SHA}"
-
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TEMP_DIR}"' EXIT
 
-# 检查 DMG SHA256
-DMG_FILE="${ROOT_DIR}/dist/photools-macOS.dmg"
-DMG_SHA=""
-if [ -f "${DMG_FILE}" ]; then
-    echo "🔍 正在计算本地 DMG 镜像 SHA256: ${DMG_FILE} ..."
-    DMG_SHA="$(shasum -a 256 "${DMG_FILE}" | awk '{print $1}')"
-    echo "  ✅ 本地 DMG SHA256: ${DMG_SHA}"
-else
-    DMG_URL="https://github.com/${REPO}/releases/download/${TAG}/photools-macOS.dmg"
-    echo "🔍 尝试下载线上 DMG 镜像: ${DMG_URL} ..."
-    ONLINE_DMG="${TEMP_DIR}/photools-macOS.dmg"
-    if curl -sSL -f -o "${ONLINE_DMG}" "${DMG_URL}"; then
-        DMG_SHA="$(shasum -a 256 "${ONLINE_DMG}" | awk '{print $1}')"
-        echo "  ✅ 线上 DMG SHA256: ${DMG_SHA}"
-    else
-        echo "  ⚠️ 线上 DMG 尚不存在，使用占位符。"
-        DMG_SHA="0000000000000000000000000000000000000000000000000000000000000000"
+resolve_sha256() {
+    local name="$1"
+    local local_file="${ROOT_DIR}/dist/${name}"
+    local sha=""
+
+    if [ -f "${local_file}" ]; then
+        sha="$(shasum -a 256 "${local_file}" | awk '{print $1}')"
+        echo "  ✅ 本地 ${name} SHA256: ${sha}" >&2
+        echo "${sha}"
+        return
     fi
-fi
+
+    # 尝试从线上 GitHub Release 下载
+    local online_url="https://github.com/${REPO}/releases/download/${TAG}/${name}"
+    local temp_file="${TEMP_DIR}/${name}"
+    if curl -sSL -f -o "${temp_file}" "${online_url}" 2>/dev/null; then
+        sha="$(shasum -a 256 "${temp_file}" | awk '{print $1}')"
+        echo "  ✅ 线上 Release ${name} SHA256: ${sha}" >&2
+        echo "${sha}"
+        return
+    fi
+
+    echo "  ⚠️ ${name} 本地与线上均未发现，使用全零占位符" >&2
+    echo "0000000000000000000000000000000000000000000000000000000000000000"
+}
+
+echo "🔍 正在解析预编译二进制文件与 DMG 镜像 SHA256 ..."
+MAC_ARM_SHA="$(resolve_sha256 "photools-darwin-arm64")"
+MAC_AMD_SHA="$(resolve_sha256 "photools-darwin-amd64")"
+LINUX_AMD_SHA="$(resolve_sha256 "photools-linux-amd64")"
+DMG_SHA="$(resolve_sha256 "photools-macOS.dmg")"
 
 # 1. 渲染 Formula/photools.rb
 mkdir -p "${ROOT_DIR}/Formula"

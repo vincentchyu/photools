@@ -104,7 +104,12 @@ final class WorkspaceScannerTests: XCTestCase {
 
     func testPendingReportCanBeMissing() throws {
         let root = try makeWorkspace()
-        let summary = try WorkspaceScanner().scan(baseDirectory: root.path, rawExtensions: ["nef"])
+        let isolatedLogDir = root.appendingPathComponent("Logs").path
+        let summary = try WorkspaceScanner().scan(
+            baseDirectory: root.path,
+            logDirectory: isolatedLogDir,
+            rawExtensions: ["nef"]
+        )
 
         XCTAssertFalse(summary.pendingReportExists)
         XCTAssertEqual(summary.pendingReportText, "")

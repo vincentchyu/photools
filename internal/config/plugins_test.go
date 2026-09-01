@@ -116,9 +116,19 @@ func TestAutoMigrateExistingConfig(t *testing.T) {
 		t.Fatalf("expected 4 plugins after migration, got %d", len(cfg.Plugins))
 	}
 
-	// 验证磁盘上的文件是否被覆盖写入了新内容
+	// 验证磁盘上的文件是否被覆盖写入了新内容，且已彻底剔除 name 与 description 冗余
 	diskData, _ := os.ReadFile(configPath)
-	if !strings.Contains(string(diskData), "gps_interpolate") {
-		t.Errorf("expected file on disk to contain gps_interpolate, got:\n%s", string(diskData))
+	diskStr := string(diskData)
+	if !strings.Contains(diskStr, "gps_interpolate") {
+		t.Errorf("expected file on disk to contain gps_interpolate, got:\n%s", diskStr)
+	}
+	if strings.Contains(diskStr, "\"name\":") || strings.Contains(diskStr, "\"description\":") {
+		t.Errorf("expected disk json to strip name/description redundant fields, got:\n%s", diskStr)
+	}
+
+	// 验证内存中绑定了正确的 NameKey/DescKey，使得 Title() 正常工作
+	pGpx := cfg.FindPluginMeta(domain.CapGPXMatching)
+	if pGpx == nil || pGpx.Title() == "" || pGpx.Title() == "gpx_matching" {
+		t.Errorf("expected pGpx.Title() to return i18n title, got %q", pGpx.Title())
 	}
 }

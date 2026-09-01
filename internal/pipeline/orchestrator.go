@@ -15,6 +15,7 @@ import (
 	"github.com/vincentchyu/photools/internal/domain"
 	"github.com/vincentchyu/photools/internal/engine"
 	"github.com/vincentchyu/photools/internal/exiftool"
+	"github.com/vincentchyu/photools/internal/i18n"
 )
 
 // Phase 代表由相同 Priority 插件组成的并发执行阶段
@@ -113,14 +114,14 @@ func NewOrchestrator(cfg Config) (*Orchestrator, error) {
 			for _, c := range ph.Capabilities {
 				capNames = append(capNames, c.Name())
 			}
-			phaseDescs = append(phaseDescs, fmt.Sprintf("阶段%d[P%d:%s]", idx+1, ph.Priority, strings.Join(capNames, "+")))
+			phaseDescs = append(phaseDescs, fmt.Sprintf(i18n.T("eventPhasePipelineFmt"), idx+1, ph.Priority, strings.Join(capNames, "+")))
 		}
-		name = fmt.Sprintf("优先级分层流水线: %s", strings.Join(phaseDescs, " ➔ "))
+		name = fmt.Sprintf(i18n.T("eventPipelineHierarchicalName"), strings.Join(phaseDescs, " ➔ "))
 	}
 
 	desc := cfg.Description
 	if desc == "" {
-		desc = "按插件 Priority 从高到低分阶段串行流转，同阶段内安全并发处理"
+		desc = i18n.T("eventPipelineDefaultDesc")
 	}
 
 	policy := cfg.SidecarPolicy
@@ -204,7 +205,7 @@ func (o *Orchestrator) PlanWithProgress(ctx context.Context, eventCh chan<- doma
 	sendEvent(domain.ProgressEvent{
 		Stage:   domain.StageDiscover,
 		Level:   domain.LevelInfo,
-		Message: fmt.Sprintf("正在扫描源目录: %s ...", o.sourceDir),
+		Message: fmt.Sprintf(i18n.T("eventScanningSourceDir"), o.sourceDir),
 	})
 
 	// 0. 执行各阶段能力插件环境自检与初始化
@@ -227,7 +228,7 @@ func (o *Orchestrator) PlanWithProgress(ctx context.Context, eventCh chan<- doma
 		sendEvent(domain.ProgressEvent{
 			Stage:   domain.StagePrecheck,
 			Level:   domain.LevelInfo,
-			Message: "源目录中未发现可处理的照片资产",
+			Message: i18n.T("eventNoPhotosFound"),
 		})
 		return result, nil
 	}
@@ -236,7 +237,7 @@ func (o *Orchestrator) PlanWithProgress(ctx context.Context, eventCh chan<- doma
 	sendEvent(domain.ProgressEvent{
 		Stage:        domain.StagePrecheck,
 		Level:        domain.LevelInfo,
-		Message:      fmt.Sprintf("已发现 %d 组摄影资产，正在并发批量提取 EXIF 拍摄元数据...", totalAssets),
+		Message:      fmt.Sprintf(i18n.T("eventPhotosDiscoveredPrecheck"), totalAssets),
 		TotalItems:   totalAssets,
 		CurrentIndex: 0,
 	})
@@ -288,7 +289,7 @@ func (o *Orchestrator) PlanWithProgress(ctx context.Context, eventCh chan<- doma
 			sendEvent(domain.ProgressEvent{
 				Stage:        domain.StagePrecheck,
 				Level:        domain.LevelInfo,
-				Message:      fmt.Sprintf("正在并发批量装载 EXIF 元数据 (%d/%d 组 - %.0f%%)...", processed, total, pct),
+				Message:      fmt.Sprintf(i18n.T("eventBatchLoadingMetaPct"), processed, total, pct),
 				TotalItems:   total,
 				CurrentIndex: processed,
 			})
@@ -325,7 +326,7 @@ func (o *Orchestrator) PlanWithProgress(ctx context.Context, eventCh chan<- doma
 	sendEvent(domain.ProgressEvent{
 		Stage:        domain.StagePrecheck,
 		Level:        domain.LevelInfo,
-		Message:      fmt.Sprintf("元数据装载完成，正在多协程并发评估各阶段动作 (共 %d 组)...", totalAssets),
+		Message:      fmt.Sprintf(i18n.T("eventMetaLoadedEvaluating"), totalAssets),
 		TotalItems:   totalAssets,
 		CurrentIndex: 0,
 	})
@@ -356,7 +357,7 @@ func (o *Orchestrator) PlanWithProgress(ctx context.Context, eventCh chan<- doma
 					hasExecutableStage = true
 				}
 				if plan.ActionDesc != "" {
-					actions = append(actions, fmt.Sprintf("阶段%d[P%d] %s: %s", phaseIdx+1, ph.Priority, capInst.Name(), plan.ActionDesc))
+					actions = append(actions, fmt.Sprintf(i18n.T("tuiDryRunPhasePrefix"), phaseIdx+1, ph.Priority, capInst.Name(), plan.ActionDesc))
 				}
 				if plan.Warning != "" {
 					hasBlockingWarning = true
@@ -384,7 +385,7 @@ func (o *Orchestrator) PlanWithProgress(ctx context.Context, eventCh chan<- doma
 			sendEvent(domain.ProgressEvent{
 				Stage:        domain.StagePrecheck,
 				Level:        domain.LevelInfo,
-				Message:      fmt.Sprintf("正在评估执行计划 (%d/%d 组 - %.0f%%)...", done, totalAssets, float64(done)/float64(totalAssets)*100),
+				Message:      fmt.Sprintf(i18n.T("eventEvaluatingPlanPct"), done, totalAssets, float64(done)/float64(totalAssets)*100),
 				TotalItems:   totalAssets,
 				CurrentIndex: done,
 			})
@@ -413,7 +414,7 @@ func (o *Orchestrator) PlanWithProgress(ctx context.Context, eventCh chan<- doma
 	sendEvent(domain.ProgressEvent{
 		Stage:        domain.StagePrecheck,
 		Level:        domain.LevelSuccess,
-		Message:      fmt.Sprintf("✅ 预检评估完成！就绪: %d 组，待补/跳过: %d 组，异常: %d 组", result.ReadyCount, result.PendingCount, result.WarningsCount),
+		Message:      fmt.Sprintf(i18n.T("tuiDryRunCompleteMessage"), result.ReadyCount, result.PendingCount, result.WarningsCount),
 		TotalItems:   totalAssets,
 		CurrentIndex: totalAssets,
 	})
@@ -444,12 +445,13 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 
 		// 写入执行头部信息
 		headerText := fmt.Sprintf("================================================================================\n"+
-			"📷 photools 流水线执行日志 (Pipeline Execution Log)\n"+
-			"- 启动时间: %s\n"+
-			"- 任务名称: %s\n"+
-			"- 扫描源目录: %s\n"+
-			"- 执行阶段数: %d 个阶段 (Worker 并发: %d)\n"+
+			"%s\n"+
+			i18n.T("logFileHeaderStartTime")+"\n"+
+			i18n.T("logFileHeaderTaskName")+"\n"+
+			i18n.T("logFileHeaderSourceDir")+"\n"+
+			i18n.T("logFileHeaderPhases")+"\n"+
 			"================================================================================\n\n",
+			i18n.T("logFileHeaderTitle"),
 			startTime.Format("2006-01-02 15:04:05"), o.Name(), o.sourceDir, len(o.phases), o.workers)
 
 		for _, f := range logFiles {
@@ -474,7 +476,7 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 			}
 		}
 
-		// 实时中文日志流落盘
+		// 实时中文/英文日志流落盘
 		if len(logFiles) > 0 && e.Message != "" {
 			nowStr := time.Now().Format("15:04:05.000")
 			lvlStr := "INFO"
@@ -486,9 +488,9 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 			case domain.LevelSuccess:
 				lvlStr = "SUCC"
 			}
-			stageStr := string(e.Stage)
+			stageStr := domain.StageDisplayName(e.Stage)
 			if stageStr == "" {
-				stageStr = "执行阶段"
+				stageStr = domain.StageDisplayName(domain.StagePrecheck)
 			}
 
 			line := fmt.Sprintf("[%s] [%-5s] [%s] %s\n", nowStr, lvlStr, stageStr, e.Message)
@@ -505,7 +507,7 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 	if o.lockPath != "" {
 		if err := os.Mkdir(o.lockPath, 0o755); err != nil {
 			if os.IsExist(err) {
-				sendEvent(domain.NewInfoEvent(domain.StagePrecheck, "已有任务正在处理中，本次跳过。"))
+				sendEvent(domain.NewInfoEvent(domain.StagePrecheck, i18n.T("eventAlreadyRunningLock")))
 				return &domain.TaskSummary{}, nil, nil
 			}
 			return nil, nil, fmt.Errorf("创建运行锁失败: %w", err)
@@ -530,7 +532,7 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 		}
 	}
 
-	sendEvent(domain.NewInfoEvent(domain.StageDiscover, fmt.Sprintf("开始扫描目录 %s ...", o.sourceDir)))
+	sendEvent(domain.NewInfoEvent(domain.StageDiscover, fmt.Sprintf(i18n.T("eventScanStartDir"), o.sourceDir)))
 
 	allGroups, err := o.discoverer.Discover(o.sourceDir)
 	if err != nil {
@@ -542,18 +544,18 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 	}
 
 	if len(allGroups) == 0 {
-		sendEvent(domain.NewInfoEvent(domain.StageComplete, "目录中没有发现可处理的照片资产。"))
+		sendEvent(domain.NewInfoEvent(domain.StageComplete, i18n.T("eventNoPhotosFound")))
 		return summary, nil, nil
 	}
 
 	// 若开启了测试备份模式，在正式处理前对待处理原始资产做全量快照
 	if o.backupDir != "" && len(allGroups) > 0 {
-		sendEvent(domain.NewInfoEvent(domain.StageDiscover, fmt.Sprintf("📦 [测试备份模式] 正在将 %d 组待处理原始照片快照备份至 %s ...", len(allGroups), o.backupDir)))
+		sendEvent(domain.NewInfoEvent(domain.StageDiscover, fmt.Sprintf(i18n.T("eventTestBackupStart"), len(allGroups), o.backupDir)))
 		copiedCount, err := engine.BackupAssetGroups(allGroups, o.sourceDir, o.backupDir)
 		if err != nil {
 			return nil, nil, fmt.Errorf("测试备份失败: %w", err)
 		}
-		sendEvent(domain.NewInfoEvent(domain.StageDiscover, fmt.Sprintf("✅ [测试备份模式] 已完成 %d 个原始文件快照备份 (%s)", copiedCount, o.backupDir)))
+		sendEvent(domain.NewInfoEvent(domain.StageDiscover, fmt.Sprintf(i18n.T("eventTestBackupDone"), copiedCount, o.backupDir)))
 	}
 
 	// 初始化共享上下文表（每个拍摄单元唯一对应一个 AssetContext）
@@ -591,7 +593,7 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 			sendEvent(domain.ProgressEvent{
 				Stage:   domain.StageComplete,
 				Level:   domain.LevelWarn,
-				Message: "任务已被用户中断取消",
+				Message: i18n.T("eventTaskInterruptedByUser"),
 			})
 			return summary, nil, err
 		}
@@ -600,8 +602,8 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 		for _, c := range ph.Capabilities {
 			capNames = append(capNames, c.Name())
 		}
-		phaseTitle := fmt.Sprintf("【阶段 %d/%d · 优先级 %d】%s", phaseIdx+1, len(o.phases), ph.Priority, strings.Join(capNames, " & "))
-		sendEvent(domain.NewInfoEvent(domain.StagePrecheck, fmt.Sprintf("🚦 进入 %s (共 %d 个资产并发处理)...", phaseTitle, totalAssets)))
+		phaseTitle := fmt.Sprintf(i18n.T("eventPhaseTitleFmt"), phaseIdx+1, len(o.phases), ph.Priority, strings.Join(capNames, " & "))
+		sendEvent(domain.NewInfoEvent(domain.StagePrecheck, fmt.Sprintf(i18n.T("eventPhaseEntering"), phaseTitle, totalAssets)))
 
 		var phaseProcessed atomic.Int64
 		var phaseMu sync.Mutex
@@ -626,7 +628,7 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 				sendEvent(domain.ProgressEvent{
 					Stage:        ph.Capabilities[0].RequiredStage(),
 					Level:        domain.LevelWarn,
-					Message:      fmt.Sprintf("[%s] ⏭️ 前序阶段未通过，安全熔断跳过当前阶段：%s", capName, st.actx.Asset.DisplayName()),
+					Message:      fmt.Sprintf(i18n.T("eventPhaseCascadeBlocked"), capName, st.actx.Asset.DisplayName()),
 					Asset:        &st.actx.Asset,
 					CurrentIndex: idx,
 					TotalItems:   totalAssets,
@@ -647,7 +649,7 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 					if plan.Warning == "" {
 						desc := plan.ActionDesc
 						if desc == "" {
-							desc = "已满足条件，无需重复处理"
+							desc = i18n.T("eventConditionMetSkip")
 						}
 						skippedDescs = append(skippedDescs, desc)
 						continue
@@ -670,7 +672,7 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 					sendEvent(domain.ProgressEvent{
 						Stage:        capInst.RequiredStage(),
 						Level:        domain.LevelWarn,
-						Message:      fmt.Sprintf("[%s] 未满足执行条件，暂停后续阶段：%s (%s)", capInst.Name(), st.actx.Asset.DisplayName(), plan.Warning),
+						Message:      fmt.Sprintf(i18n.T("eventPhaseUnmetCondition"), capInst.Name(), st.actx.Asset.DisplayName(), plan.Warning),
 						Asset:        &st.actx.Asset,
 						Issue:        issue,
 						CurrentIndex: idx,
@@ -697,20 +699,32 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 						return struct{}{}
 					}
 
-					suggestion := "请检查底层工具、文件权限或补充必要输入。"
-					if strings.Contains(err.Error(), "GPS") || strings.Contains(err.Error(), "轨迹") {
-						suggestion = "拍摄时间未命中当前 GPX 轨迹。若需直接归档，可使用 photools pipeline --gpx=false 模式跳过 GPS 修正直接归档，或补全该时间段 GPX 轨迹。"
-					} else if strings.Contains(err.Error(), "目标文件已存在") || strings.Contains(err.Error(), "冲突") {
-						suggestion = "归档目标路径已存在同名文件，请检查是否已归档过或修改命名模板以避免重名。"
+					// 基于能力插件 ID 正交分类建议，杜绝因路径包含 "GPS" 目录名而误判
+					var suggestion string
+					switch capInst.ID() {
+					case domain.CapGPXMatching:
+						suggestion = i18n.T("suggestionGpxMissingTrack")
+					case domain.CapGPSInterpolate:
+						suggestion = i18n.T("suggestionInterpolateNoAnchor")
+					case domain.CapReverseGeocode:
+						suggestion = i18n.T("suggestionGeocodeFailed")
+					case domain.CapDateArchive:
+						if strings.Contains(err.Error(), "目标文件已存在") || strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "冲突") {
+							suggestion = i18n.T("suggestionArchiveTargetExists")
+						} else {
+							suggestion = i18n.T("suggestionArchiveGeneral")
+						}
+					default:
+						suggestion = i18n.T("suggestionGeneral")
 					}
 
 					issue := &domain.Issue{
 						Kind:          domain.IssueKindFailure,
-						Reason:        fmt.Sprintf("[%s] 执行失败: %v", capInst.Name(), err),
+						Reason:        fmt.Sprintf(i18n.T("issueReasonExecutionFailed"), capInst.Name(), err),
 						Suggestion:    suggestion,
 						Asset:         st.actx.Asset,
 						FailedStage:   capInst.Name(),
-						CurrentStatus: fmt.Sprintf("处理中断，源文件安全保留在 (%s)", o.sourceDir),
+						CurrentStatus: fmt.Sprintf(i18n.T("issueStatusPreservedInSource"), o.sourceDir),
 					}
 					phaseMu.Lock()
 					st.failed = true
@@ -720,7 +734,7 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 					sendEvent(domain.ProgressEvent{
 						Stage:        capInst.RequiredStage(),
 						Level:        domain.LevelError,
-						Message:      fmt.Sprintf("[%s] 处理失败：%s (%v)", capInst.Name(), st.actx.Asset.DisplayName(), err),
+						Message:      fmt.Sprintf(i18n.T("eventPhaseFailed"), capInst.Name(), st.actx.Asset.DisplayName(), err),
 						Asset:        &st.actx.Asset,
 						Issue:        issue,
 						CurrentIndex: idx,
@@ -737,7 +751,7 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 				sendEvent(domain.ProgressEvent{
 					Stage:        ph.Capabilities[len(ph.Capabilities)-1].RequiredStage(),
 					Level:        domain.LevelSuccess,
-					Message:      fmt.Sprintf("[%s] 完成: %s", phaseTitle, st.actx.Asset.DisplayName()),
+					Message:      fmt.Sprintf(i18n.T("eventPhaseCompleted"), phaseTitle, st.actx.Asset.DisplayName()),
 					Asset:        &st.actx.Asset,
 					CurrentIndex: idx,
 					TotalItems:   totalAssets,
@@ -746,7 +760,7 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 				sendEvent(domain.ProgressEvent{
 					Stage:        ph.Capabilities[len(ph.Capabilities)-1].RequiredStage(),
 					Level:        domain.LevelInfo,
-					Message:      fmt.Sprintf("[%s] ⏭️ 跳过: %s (%s)", phaseTitle, st.actx.Asset.DisplayName(), strings.Join(skippedDescs, "; ")),
+					Message:      fmt.Sprintf(i18n.T("eventPhaseSkipped"), phaseTitle, st.actx.Asset.DisplayName(), strings.Join(skippedDescs, "; ")),
 					Asset:        &st.actx.Asset,
 					CurrentIndex: idx,
 					TotalItems:   totalAssets,
@@ -755,7 +769,7 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 			return struct{}{}
 		})
 
-		sendEvent(domain.NewInfoEvent(domain.StagePrecheck, fmt.Sprintf("✅ %s 全部执行完毕，通过阶段同步屏障！", phaseTitle)))
+		sendEvent(domain.NewInfoEvent(domain.StagePrecheck, fmt.Sprintf(i18n.T("eventPhaseBarrierPassed"), phaseTitle)))
 	}
 
 	// 最终汇总
@@ -781,7 +795,7 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 	}
 
 	totalDur := time.Since(startTime)
-	summaryMsg := fmt.Sprintf("全部 %d 个阶段流水线处理完成：共 %d 个资产，成功 %d，待补 %d，失败 %d (总耗时: %v)",
+	summaryMsg := fmt.Sprintf(i18n.T("eventPipelineSummaryDone"),
 		len(o.phases), summary.TotalAssets, summary.Success, summary.Pending, summary.Failed, totalDur)
 
 	sendEvent(domain.ProgressEvent{
@@ -794,21 +808,21 @@ func (o *Orchestrator) Execute(ctx context.Context, eventCh chan<- domain.Progre
 	if len(logFiles) > 0 {
 		var footer strings.Builder
 		footer.WriteString("\n================================================================================\n")
-		footer.WriteString("📊 流水线执行结算概览 (Execution Summary)\n")
-		footer.WriteString(fmt.Sprintf("- 结束时间: %s (总耗时: %v)\n", time.Now().Format("2006-01-02 15:04:05"), totalDur))
-		footer.WriteString(fmt.Sprintf("- 资产总数: %d 组\n", summary.TotalAssets))
-		footer.WriteString(fmt.Sprintf("- 成功完成: %d 组\n", summary.Success))
-		footer.WriteString(fmt.Sprintf("- 待补保留: %d 组\n", summary.Pending))
-		footer.WriteString(fmt.Sprintf("- 失败异常: %d 组\n", summary.Failed))
+		footer.WriteString(i18n.T("logFileFooterTitle") + "\n")
+		footer.WriteString(fmt.Sprintf(i18n.T("logFileFooterEndTime")+"\n", time.Now().Format("2006-01-02 15:04:05"), totalDur))
+		footer.WriteString(fmt.Sprintf(i18n.T("logFileFooterTotal")+"\n", summary.TotalAssets))
+		footer.WriteString(fmt.Sprintf(i18n.T("logFileFooterSuccess")+"\n", summary.Success))
+		footer.WriteString(fmt.Sprintf(i18n.T("logFileFooterPending")+"\n", summary.Pending))
+		footer.WriteString(fmt.Sprintf(i18n.T("logFileFooterFailed")+"\n", summary.Failed))
 
 		if len(issues) > 0 {
-			footer.WriteString("\n⚠️ 异常与待补资产清单:\n")
+			footer.WriteString(i18n.T("logFileFooterIssuesHeader"))
 			for i, iss := range issues {
-				footer.WriteString(fmt.Sprintf("  [%d] %s (阶段: %s) -> 原因: %s\n      建议: %s\n",
+				footer.WriteString(fmt.Sprintf(i18n.T("logFileFooterIssueItem"),
 					i+1, iss.Asset.DisplayName(), iss.FailedStage, iss.Reason, iss.Suggestion))
 			}
 		} else {
-			footer.WriteString("\n🎉 本次流水线全部资产处理成功，无任何异常！\n")
+			footer.WriteString(i18n.T("logFileFooterAllSuccess"))
 		}
 		footer.WriteString("================================================================================\n")
 

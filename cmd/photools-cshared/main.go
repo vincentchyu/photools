@@ -53,6 +53,7 @@ import (
 	"github.com/vincentchyu/photools/internal/domain"
 	"github.com/vincentchyu/photools/internal/engine"
 	"github.com/vincentchyu/photools/internal/exiftool"
+	"github.com/vincentchyu/photools/internal/i18n"
 	"github.com/vincentchyu/photools/internal/pipeline"
 	"github.com/vincentchyu/photools/pkg/geocoding"
 	"github.com/vincentchyu/photools/pkg/geodata"
@@ -87,6 +88,8 @@ type PipelineOptionsJSON struct {
 	EnableArchive       bool   `json:"enable_archive"`
 	TestBackup          bool   `json:"test_backup"`
 	BackupDir           string `json:"backup_dir"`
+	LogDir              string `json:"log_dir"`
+	Language            string `json:"language"`
 }
 
 //export Photools_Init
@@ -166,6 +169,10 @@ func Photools_RunPipeline(optionsJSON *C.char, eventCB C.Photools_EventCallback,
 			return
 		}
 
+		if opts.Language != "" {
+			i18n.SetLanguage(opts.Language)
+		}
+
 		win, _ := time.ParseDuration(opts.InterpolateWindow)
 		if win <= 0 {
 			win = 15 * time.Minute
@@ -228,7 +235,7 @@ func Photools_RunPipeline(optionsJSON *C.char, eventCB C.Photools_EventCallback,
 		go func() {
 			for evt := range eventCh {
 				if eventCB != nil {
-					cStage := C.CString(string(evt.Stage))
+					cStage := C.CString(domain.StageDisplayName(evt.Stage))
 					cLevel := C.CString(string(evt.Level))
 					cMsg := C.CString(evt.Message)
 					var cAsset *C.char
@@ -508,6 +515,174 @@ func Photools_InspectPhotoMetadata(filePath *C.char) *C.char {
 		return C.CString("{}")
 	}
 
+	return C.CString(string(data))
+}
+
+//export Photools_SetLanguage
+func Photools_SetLanguage(cLang *C.char) {
+	if cLang == nil {
+		return
+	}
+	lang := C.GoString(cLang)
+	norm := i18n.NormalizeLanguage(lang)
+	i18n.SetLanguage(norm)
+}
+
+//export Photools_SavePreferences
+func Photools_SavePreferences(optionsJSON *C.char) C.int {
+	if optionsJSON == nil {
+		return -1
+	}
+	rawJSON := C.GoString(optionsJSON)
+	var opts PipelineOptionsJSON
+	if err := json.Unmarshal([]byte(rawJSON), &opts); err != nil {
+		return -1
+	}
+
+	pluginsCfg, err := config.LoadPluginsConfig("")
+	if err != nil || pluginsCfg == nil {
+		def := config.DefaultPluginsConfig()
+		pluginsCfg = &def
+	}
+
+	sessionCfg := config.NewSessionConfig(pluginsCfg)
+
+	// 仅持久化真正的全局持久项 (GPX 目录、日志目录、语言、侧车策略、扩展名白名单、Workers 等)
+	if opts.GPXDir != "" {
+		sessionCfg.Global.GPXDir = opts.GPXDir
+	}
+	if opts.LogDir != "" {
+		sessionCfg.Global.LogDir = opts.LogDir
+	}
+	if opts.Language != "" {
+		norm := i18n.NormalizeLanguage(opts.Language)
+		sessionCfg.Global.Language = norm
+		i18n.SetLanguage(norm)
+	}
+	if opts.SidecarPolicy != "" {
+		sessionCfg.Global.SidecarPolicy = string(domain.NormalizePolicy(opts.SidecarPolicy))
+	}
+	if opts.CompanionExtensions != "" {
+		fields := strings.FieldsFunc(opts.CompanionExtensions, func(r rune) bool {
+			return r == ',' || r == ' ' || r == ';'
+		})
+		var compExts []string
+		for _, p := range fields {
+			c := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(p)), ".")
+			if c != "" {
+				compExts = append(compExts, c)
+			}
+		}
+		if len(compExts) > 0 {
+			sessionCfg.Global.CompanionExtensions = compExts
+		}
+	}
+	if opts.RawExtensions != "" {
+		fields := strings.FieldsFunc(opts.RawExtensions, func(r rune) bool {
+			return r == ',' || r == ' ' || r == ';'
+		})
+		var rawExts []string
+		for _, p := range fields {
+			c := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(p)), ".")
+			if c != "" {
+				rawExts = append(rawExts, c)
+			}
+		}
+		if len(rawExts) > 0 {
+			sessionCfg.Global.RawExtensions = rawExts
+		}
+	}
+	if opts.Workers > 0 {
+		sessionCfg.Global.Workers = opts.Workers
+	}
+
+	// 插件全局默认开关与选项
+	sessionCfg.SetPluginEnabled(domain.CapGPXMatching, opts.EnableGPXMatch)
+	if opts.Geosync != "" {
+		sessionCfg.SetPluginOption(domain.CapGPXMatching, "geosync", opts.Geosync)
+	}
+
+	sessionCfg.SetPluginEnabled(domain.CapGPSInterpolate, opts.EnableInterpolate)
+	if opts.InterpolateWindow != "" {
+		sessionCfg.SetPluginOption(domain.CapGPSInterpolate, "window", opts.InterpolateWindow)
+	}
+
+	sessionCfg.SetPluginEnabled(domain.CapReverseGeocode, opts.EnableGeocode)
+
+	sessionCfg.SetPluginEnabled(domain.CapDateArchive, opts.EnableArchive)
+
+	sessionCfg.ApplyToPluginsConfig(pluginsCfg)
+	if err := config.SavePluginsConfig("", pluginsCfg); err != nil {
+		return -1
+	}
+	return 0
+}
+
+//export Photools_GetGlobalConfigJSON
+func Photools_GetGlobalConfigJSON() *C.char {
+	pluginsCfg, err := config.LoadPluginsConfig("")
+	if err != nil || pluginsCfg == nil {
+		def := config.DefaultPluginsConfig()
+		pluginsCfg = &def
+	}
+	data, err := json.Marshal(pluginsCfg.Global)
+	if err != nil {
+		return C.CString("{}")
+	}
+	return C.CString(string(data))
+}
+
+func init() {
+	if cfg, err := config.LoadPluginsConfig(""); err == nil && cfg != nil && cfg.Global.Language != "" {
+		i18n.SetLanguage(cfg.Global.Language)
+	}
+}
+
+type pluginMetaExport struct {
+	ID       string                 `json:"id"`
+	Name     string                 `json:"name"`
+	Desc     string                 `json:"desc"`
+	NameKey  string                 `json:"name_key"`
+	DescKey  string                 `json:"desc_key"`
+	Priority int                    `json:"priority"`
+	Enabled  bool                   `json:"enabled"`
+	Options  map[string]interface{} `json:"options,omitempty"`
+}
+
+//export Photools_GetPluginMetasJSON
+func Photools_GetPluginMetasJSON() *C.char {
+	cfg, err := config.LoadPluginsConfig("")
+	if err != nil || cfg == nil {
+		def := config.DefaultPluginsConfig()
+		cfg = &def
+	}
+	exports := make([]pluginMetaExport, 0, len(cfg.Plugins))
+	for _, p := range cfg.Plugins {
+		exports = append(exports, pluginMetaExport{
+			ID:       string(p.ID),
+			Name:     p.Title(),
+			Desc:     p.Desc(),
+			NameKey:  p.NameKey,
+			DescKey:  p.DescKey,
+			Priority: p.Priority,
+			Enabled:  p.Enabled,
+			Options:  p.Options,
+		})
+	}
+	data, err := json.Marshal(exports)
+	if err != nil {
+		return C.CString("[]")
+	}
+	return C.CString(string(data))
+}
+
+//export Photools_GetGlobalOptionSpecsJSON
+func Photools_GetGlobalOptionSpecsJSON() *C.char {
+	specs := config.GlobalOptionSpecs()
+	data, err := json.Marshal(specs)
+	if err != nil {
+		return C.CString("[]")
+	}
 	return C.CString(string(data))
 }
 
