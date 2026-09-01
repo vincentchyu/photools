@@ -21,6 +21,7 @@ import (
 	"github.com/vincentchyu/photools/internal/domain"
 	"github.com/vincentchyu/photools/internal/engine"
 	"github.com/vincentchyu/photools/internal/exiftool"
+	"github.com/vincentchyu/photools/internal/i18n"
 	"github.com/vincentchyu/photools/internal/pipeline"
 	"github.com/vincentchyu/photools/internal/tui"
 	"github.com/vincentchyu/photools/pkg/geocoding"
@@ -51,6 +52,13 @@ func main() {
 		exitApp(130)
 	}()
 
+	// 启动时自动同步并升级 ~/.config/photools/plugins.json 配置
+	pluginsCfg, _ := config.LoadPluginsConfig("")
+	sessionCfg := config.NewSessionConfig(pluginsCfg)
+	if sessionCfg.Global.Language != "" {
+		i18n.SetLanguage(sessionCfg.Global.Language)
+	}
+
 	if len(os.Args) >= 2 {
 		switch os.Args[1] {
 		case "completion":
@@ -61,9 +69,6 @@ func main() {
 			os.Exit(0)
 		}
 	}
-
-	// 启动时自动同步并升级 ~/.config/photools/plugins.json 配置
-	_, _ = config.LoadPluginsConfig("")
 
 	defaultBaseDir, _ := defaultBaseDir()
 
@@ -85,6 +90,9 @@ func main() {
 			fmt.Fprintf(os.Stderr, "运行 TUI 失败: %v\n", err)
 			exitApp(1)
 		}
+	case "language", "lang":
+		runLanguage(os.Args[2:])
+		exitApp(0)
 	case "geotag":
 		runGeotag(defaultBaseDir)
 	case "geocode":
@@ -121,6 +129,35 @@ func main() {
 	}
 }
 
+func runLanguage(args []string) {
+	if len(args) == 0 {
+		fmt.Printf("当前语言 (Current Language): %s\n", i18n.GetLanguage())
+		fmt.Println("支持的语言 (Supported): zh-CN, en-US")
+		fmt.Println("用法 (Usage): photools language [zh-CN|en-US|zh|en]")
+		return
+	}
+
+	target := i18n.NormalizeLanguage(args[0])
+	i18n.SetLanguage(target)
+
+	// 同步持久化写入 ~/.config/photools/plugins.json
+	pluginsCfg, err := config.LoadPluginsConfig("")
+	if err != nil || pluginsCfg == nil {
+		def := config.DefaultPluginsConfig()
+		pluginsCfg = &def
+	}
+	pluginsCfg.Global.Language = target
+	if err := config.SavePluginsConfig("", pluginsCfg); err != nil {
+		fmt.Fprintf(os.Stderr, "保存配置失败: %v\n", err)
+	}
+
+	if i18n.IsChinese() {
+		fmt.Printf("✅ 界面与补全语言已成功切换为: %s\n", target)
+	} else {
+		fmt.Printf("✅ Interface & completion language switched to: %s\n", target)
+	}
+}
+
 func defaultBaseDir() (string, error) {
 	wd, err := os.Getwd()
 	if err == nil && wd != "" {
@@ -134,36 +171,47 @@ func defaultBaseDir() (string, error) {
 }
 
 func printUsage() {
-	fmt.Printf("📷 photools %s - 摄影师专业 GPS 轨迹匹配、地理逆编码与照片结构化归档工具箱\n", Version)
-	fmt.Println()
-	fmt.Println("用法:")
-	fmt.Println("  photools                                在交互终端中直接启动可视化 TUI 插件工作台")
-	fmt.Println("  photools tui                            显式启动 TUI 工作台")
-	fmt.Println("  photools geotag [选项]                  根据 GPX 轨迹为照片批量修正写入 GPS 并归档")
-	fmt.Println("  photools geocode [选项]                 [独立能力] 为已有 GPS 坐标的照片批量写入离线中文地名元数据")
-	fmt.Println("  photools pipeline [选项]                [复合流水线] 自由勾选组合 [GPX修正/逆地理地名/拍摄日归档]")
-	fmt.Println("  photools organize-by-date [选项]         [独立能力] 根据照片拍摄日期整理并规范化重命名文件")
-	fmt.Println("  photools restore-test [选项]            [测试辅助] 从 Inbox_bak 备份目录一键还原原始照片至 Inbox")
-	fmt.Println("  photools geodata [操作]                 管理各大洲精细离线逆地理编码数据包 (list/install/remove/info/test)")
-	fmt.Println("  photools completion [shell]             生成或安装 Shell 自动补全脚本 (zsh/bash/fish/install)")
-	fmt.Println("  photools version                        显示当前版本号 (或 -v, --version)")
-	fmt.Println()
-	fmt.Println("常用选项 (适用 geotag/geocode/pipeline):")
-	fmt.Println("  -flat                                   [扁平原地模式] 忽略 Inbox/Processed 分层，直接扫描指定目录并原地保存/处理")
-	fmt.Println("  -in-place                               [原地重命名] 规范化重命名但不创建 Processed/YYYY/MMDD/ 子目录")
-	fmt.Println("  -interpolate                            [智能推断] 启用 GPS 邻近前后照片时间权重插值与推算")
-	fmt.Println("  -interpolate-window <时长>              智能推算最大时间窗口 (默认 15m，如 30m, 1h)")
-	fmt.Println("  -allow-no-gps                           [容错降级] 无 GPS 照片允许跳过地名写入，安全直接进行日期归档")
-	fmt.Println("  -test, -backup                          [测试备份模式] 在处理前自动将源目录待处理照片全量快照备份至 Inbox_bak")
-	fmt.Println("  -backup-dir <目录>                      自定义测试快照备份的存放目录")
-	fmt.Println("  -base-dir <目录>                        工作根目录 (默认当前目录或 ~/Pictures/GPS)")
-	fmt.Println()
-	fmt.Println("geodata 常用命令:")
-	fmt.Println("  photools geodata list                   列出所有支持的大洲数据包及本地安装状态")
-	fmt.Println("  photools geodata install <大洲>         下载并安装指定大洲数据包 (如 china, asia, europe, north-america, oceania, all)")
-	fmt.Println("  photools geodata remove <大洲>          卸载并移除指定大洲数据包")
-	fmt.Println("  photools geodata info                   查看当前全局已加载的地理点位统计")
-	fmt.Println("  photools geodata test <纬度> <经度> [海拔] [--debug] 测试并验证指定经纬度的离线逆地理编码匹配结果")
+	fmt.Printf("📷 photools %s - %s\n\n", Version, i18n.T("cliSubtitle"))
+	fmt.Println(i18n.T("cliUsageTitle"))
+	fmt.Printf("  %s\n\n", i18n.T("cliUsagePattern"))
+
+	fmt.Println(i18n.T("cliCoreCommands"))
+	fmt.Printf("  %-40s%s\n", "photools", i18n.T("cliCmdTui"))
+	fmt.Printf("  %-40s%s\n", "photools tui", i18n.T("cliCmdTuiExplicit"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliUsagePipeline"), i18n.T("cliCmdPipeline"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliUsageGeotag"), i18n.T("cliCmdGeotag"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliUsageGeocode"), i18n.T("cliCmdGeocode"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliUsageInspect"), i18n.T("cliCmdInspect"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliUsageGeodata"), i18n.T("cliCmdGeodata"))
+	fmt.Printf("  %-40s%s\n", "photools language [zh|en]", i18n.T("cliCmdLanguage"))
+	fmt.Printf("  %-40s%s\n", "photools completion [shell]", i18n.T("cliCmdCompletion"))
+	fmt.Printf("  %-40s%s\n\n", "photools version", i18n.T("cliCmdVersion"))
+
+	fmt.Println(i18n.T("cliCommonOptions"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliOptUsageBaseDir"), i18n.T("cliOptBaseDir"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliOptUsageSourceDir"), i18n.T("cliOptSourceDir"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliOptUsageGpxDir"), i18n.T("cliOptGpxDir"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliOptUsageProcessedDir"), i18n.T("cliOptProcessedDir"))
+	fmt.Printf("  %-40s%s\n", "-flat", i18n.T("cliOptFlat"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliOptUsageSidecarPolicy"), i18n.T("cliOptSidecarPolicy"))
+	fmt.Printf("  %-40s%s\n", "-sidecar-only", i18n.T("cliOptSidecarOnly"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliOptUsageCompanionExts"), i18n.T("cliOptCompanionExts"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliOptUsageRawExts"), i18n.T("cliOptRawExts"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliOptUsageGeosync"), i18n.T("cliOptGeosync"))
+	fmt.Printf("  %-40s%s\n", "-interpolate", i18n.T("cliOptInterpolate"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliOptUsageInterpolateWindow"), i18n.T("cliOptInterpolateWindow"))
+	fmt.Printf("  %-40s%s\n", "-allow-no-gps", i18n.T("cliOptAllowNoGps"))
+	fmt.Printf("  %-40s%s\n", "-in-place", i18n.T("cliOptInPlace"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliOptUsageWorkers"), i18n.T("cliOptWorkers"))
+	fmt.Printf("  %-40s%s\n", "-test, -backup", i18n.T("cliOptTestBackup"))
+	fmt.Printf("  %-40s%s\n\n", i18n.T("cliOptUsageBackupDir"), i18n.T("cliOptBackupDir"))
+
+	fmt.Println(i18n.T("cliGeodataCommands"))
+	fmt.Printf("  %-40s%s\n", "photools geodata list", i18n.T("cliGeodataList"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliUsageGeodataInstall"), i18n.T("cliGeodataInstall"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliUsageGeodataRemove"), i18n.T("cliGeodataRemove"))
+	fmt.Printf("  %-40s%s\n", "photools geodata info", i18n.T("cliGeodataInfo"))
+	fmt.Printf("  %-40s%s\n", i18n.T("cliUsageGeodataTest"), i18n.T("cliGeodataTest"))
 }
 
 func runGeotag(defaultBaseDir string) {
@@ -171,26 +219,26 @@ func runGeotag(defaultBaseDir string) {
 	sessionCfg := config.NewSessionConfig(pluginsCfg, defaultBaseDir)
 
 	fs := flag.NewFlagSet("geotag", flag.ExitOnError)
-	baseDir := fs.String("base-dir", sessionCfg.Global.BaseDir, "基础目录，包含 Inbox/Processed/Logs")
-	sourceDir := fs.String("source-dir", sessionCfg.Global.SourceDir, "待处理照片源目录 (默认 <base-dir>/Inbox)")
-	gpxDir := fs.String("gpx-dir", sessionCfg.Global.GPXDir, "GPX 轨迹目录 (默认 ~/.config/gpx)")
-	processedDir := fs.String("processed-dir", sessionCfg.Global.TargetDir, "归档目标根目录 (默认 <base-dir>/Processed)")
-	flatMode := fs.Bool("flat", sessionCfg.Global.FlatMode, "扁平原地模式 (直接扫描并就地处理/保存)")
-	sidecarPolicy := fs.String("sidecar-policy", sessionCfg.Global.SidecarPolicy, "侧车写入策略: read_only(默认/推荐: 只读RAW写XMP，JPG写内嵌), sidecar_only(纯XMP侧车), embed_and_sidecar(双写同步), embed_only(纯原图内嵌)")
-	sidecarOnly := fs.Bool("sidecar-only", sessionCfg.Global.SidecarOnly, "仅生成/修改 {file}.xmp 侧车文件 (等价于 -sidecar-policy=sidecar_only)")
-	companionExts := fs.String("companion-exts", strings.Join(sessionCfg.Global.CompanionExtensions, ","), "伴随文件扩展名白名单 (如 wav, acr, exf，逗号或空格分隔)")
-	inPlace := fs.Bool("in-place", sessionCfg.GetBoolOption(domain.CapDateArchive, "in_place", false), "原地重命名归档，不建立 YYYY/MMDD 子目录")
-	geosync := fs.String("geosync", sessionCfg.GetStringOption(domain.CapGPXMatching, "geosync", "0"), "传递给 exiftool 的 geosync 偏移值")
-	rawExts := fs.String("raw-exts", strings.Join(sessionCfg.Global.RawExtensions, ","), "可识别的 RAW 扩展名，逗号分隔")
-	workers := fs.Int("workers", sessionCfg.Global.Workers, "并发处理的资产组数量")
-	enableGeocode := fs.Bool("geocode", true, "是否同时写入逆地理地名元数据")
-	enableInterpolate := fs.Bool("interpolate", false, "启用能力 1.5: 根据前后照片时间推算补全 GPS")
-	interpolateWindow := fs.String("interpolate-window", sessionCfg.GetStringOption(domain.CapGPSInterpolate, "window", "15m"), "智能推算最大时间窗口 (如 15m, 30m, 1h)")
-	allowNoGPS := fs.Bool("allow-no-gps", sessionCfg.Global.AllowNoGPS, "无 GPS 坐标时允许跳过地名写入直接归档 (软降级)")
-	isTest := fs.Bool("test", sessionCfg.Global.TestBackup, "开启测试备份模式 (处理前自动备份 Inbox 到 Inbox_bak)")
-	isBackup := fs.Bool("backup", false, "同 -test，处理前备份原始文件")
-	backupDir := fs.String("backup-dir", "", "自定义测试备份目录")
-	logDir := fs.String("log-dir", sessionCfg.Global.LogDir, "日志与待补报告目录 (默认 ~/.logs/photools)")
+	baseDir := fs.String("base-dir", sessionCfg.Global.BaseDir, i18n.T("cliOptBaseDir"))
+	sourceDir := fs.String("source-dir", sessionCfg.Global.SourceDir, i18n.T("cliOptSourceDir"))
+	gpxDir := fs.String("gpx-dir", sessionCfg.Global.GPXDir, i18n.T("cliOptGpxDir"))
+	processedDir := fs.String("processed-dir", sessionCfg.Global.TargetDir, i18n.T("cliOptProcessedDir"))
+	flatMode := fs.Bool("flat", sessionCfg.Global.FlatMode, i18n.T("cliOptFlat"))
+	sidecarPolicy := fs.String("sidecar-policy", sessionCfg.Global.SidecarPolicy, i18n.T("cliOptSidecarPolicy"))
+	sidecarOnly := fs.Bool("sidecar-only", sessionCfg.Global.SidecarOnly, i18n.T("cliOptSidecarOnly"))
+	companionExts := fs.String("companion-exts", strings.Join(sessionCfg.Global.CompanionExtensions, ","), i18n.T("cliOptCompanionExts"))
+	inPlace := fs.Bool("in-place", sessionCfg.GetBoolOption(domain.CapDateArchive, "in_place", false), i18n.T("cliOptInPlace"))
+	geosync := fs.String("geosync", sessionCfg.GetStringOption(domain.CapGPXMatching, "geosync", "0"), i18n.T("cliOptGeosync"))
+	rawExts := fs.String("raw-exts", strings.Join(sessionCfg.Global.RawExtensions, ","), i18n.T("cliOptRawExts"))
+	workers := fs.Int("workers", sessionCfg.Global.Workers, i18n.T("cliOptWorkers"))
+	enableGeocode := fs.Bool("geocode", true, i18n.T("cliOptEnableGeocode"))
+	enableInterpolate := fs.Bool("interpolate", false, i18n.T("cliOptInterpolate"))
+	interpolateWindow := fs.String("interpolate-window", sessionCfg.GetStringOption(domain.CapGPSInterpolate, "window", "15m"), i18n.T("cliOptInterpolateWindow"))
+	allowNoGPS := fs.Bool("allow-no-gps", sessionCfg.Global.AllowNoGPS, i18n.T("cliOptAllowNoGps"))
+	isTest := fs.Bool("test", sessionCfg.Global.TestBackup, i18n.T("cliOptTestBackup"))
+	isBackup := fs.Bool("backup", false, i18n.T("cliOptTestBackup"))
+	backupDir := fs.String("backup-dir", "", i18n.T("cliOptBackupDir"))
+	logDir := fs.String("log-dir", sessionCfg.Global.LogDir, i18n.T("cliOptLogDir"))
 
 	_ = fs.Parse(normalizeBoolFlags(fs, os.Args[2:]))
 
@@ -247,20 +295,20 @@ func runGeocode(defaultBaseDir string) {
 	sessionCfg := config.NewSessionConfig(pluginsCfg, defaultBaseDir)
 
 	fs := flag.NewFlagSet("geocode", flag.ExitOnError)
-	baseDir := fs.String("base-dir", sessionCfg.Global.BaseDir, "基础工作目录")
-	dir := fs.String("dir", "", "待处理照片目录（默认 <base-dir>/Inbox）")
-	sourceDir := fs.String("source-dir", sessionCfg.Global.SourceDir, "同 -dir")
-	flatMode := fs.Bool("flat", sessionCfg.Global.FlatMode, "扁平模式 (在当前目录下直接处理)")
-	sidecarPolicy := fs.String("sidecar-policy", sessionCfg.Global.SidecarPolicy, "侧车写入策略: smart(默认/推荐: 智能分层模式), sidecar_only(纯XMP侧车), embed_and_sidecar(双写同步), embed_only(纯原图内嵌)")
-	sidecarOnly := fs.Bool("sidecar-only", sessionCfg.Global.SidecarOnly, "仅生成/修改 {file}.xmp 侧车文件 (等价于 -sidecar-policy=sidecar_only)")
-	companionExts := fs.String("companion-exts", strings.Join(sessionCfg.Global.CompanionExtensions, ","), "伴随文件扩展名白名单 (如 wav, acr, exf)")
-	rawExts := fs.String("raw-exts", strings.Join(sessionCfg.Global.RawExtensions, ","), "可识别的 RAW 扩展名，逗号分隔")
-	workers := fs.Int("workers", sessionCfg.Global.Workers, "并发处理数量")
-	allowNoGPS := fs.Bool("allow-no-gps", sessionCfg.Global.AllowNoGPS, "无 GPS 坐标时允许跳过地名写入直接归档")
-	isTest := fs.Bool("test", sessionCfg.Global.TestBackup, "开启测试备份模式 (处理前自动备份到 Inbox_bak)")
-	isBackup := fs.Bool("backup", false, "同 -test，处理前备份原始文件")
-	backupDir := fs.String("backup-dir", "", "自定义测试备份目录")
-	logDir := fs.String("log-dir", sessionCfg.Global.LogDir, "日志与待补报告目录 (默认 ~/.logs/photools)")
+	baseDir := fs.String("base-dir", sessionCfg.Global.BaseDir, i18n.T("cliOptBaseDir"))
+	dir := fs.String("dir", "", i18n.T("cliOptSourceDir"))
+	sourceDir := fs.String("source-dir", sessionCfg.Global.SourceDir, i18n.T("cliOptSourceDir"))
+	flatMode := fs.Bool("flat", sessionCfg.Global.FlatMode, i18n.T("cliOptFlat"))
+	sidecarPolicy := fs.String("sidecar-policy", sessionCfg.Global.SidecarPolicy, i18n.T("cliOptSidecarPolicy"))
+	sidecarOnly := fs.Bool("sidecar-only", sessionCfg.Global.SidecarOnly, i18n.T("cliOptSidecarOnly"))
+	companionExts := fs.String("companion-exts", strings.Join(sessionCfg.Global.CompanionExtensions, ","), i18n.T("cliOptCompanionExts"))
+	rawExts := fs.String("raw-exts", strings.Join(sessionCfg.Global.RawExtensions, ","), i18n.T("cliOptRawExts"))
+	workers := fs.Int("workers", sessionCfg.Global.Workers, i18n.T("cliOptWorkers"))
+	allowNoGPS := fs.Bool("allow-no-gps", sessionCfg.Global.AllowNoGPS, i18n.T("cliOptAllowNoGps"))
+	isTest := fs.Bool("test", sessionCfg.Global.TestBackup, i18n.T("cliOptTestBackup"))
+	isBackup := fs.Bool("backup", false, i18n.T("cliOptTestBackup"))
+	backupDir := fs.String("backup-dir", "", i18n.T("cliOptBackupDir"))
+	logDir := fs.String("log-dir", sessionCfg.Global.LogDir, i18n.T("cliOptLogDir"))
 
 	_ = fs.Parse(normalizeBoolFlags(fs, os.Args[2:]))
 
@@ -316,29 +364,29 @@ func runPipeline(defaultBaseDir string) {
 	sessionCfg := config.NewSessionConfig(pluginsCfg, defaultBaseDir)
 
 	fs := flag.NewFlagSet("pipeline", flag.ExitOnError)
-	baseDir := fs.String("base-dir", sessionCfg.Global.BaseDir, "基础工作目录")
-	sourceDir := fs.String("source-dir", sessionCfg.Global.SourceDir, "待处理源目录（默认 <base-dir>/Inbox）")
-	gpxDir := fs.String("gpx-dir", sessionCfg.Global.GPXDir, "GPX 轨迹目录（默认 ~/.config/gpx）")
-	processedDir := fs.String("processed-dir", sessionCfg.Global.TargetDir, "归档目标根目录（默认 <base-dir>/Processed）")
-	flatMode := fs.Bool("flat", sessionCfg.Global.FlatMode, "扁平原地模式 (忽略 Inbox/Processed 分层，直接扫描并就地处理/保存)")
-	sidecarPolicy := fs.String("sidecar-policy", sessionCfg.Global.SidecarPolicy, "侧车写入策略: smart(默认/推荐: 智能分层模式), sidecar_only(纯XMP侧车), embed_and_sidecar(双写同步), embed_only(纯原图内嵌)")
-	sidecarOnly := fs.Bool("sidecar-only", sessionCfg.Global.SidecarOnly, "仅生成/修改 {file}.xmp 侧车文件 (等价于 -sidecar-policy=sidecar_only)")
-	companionExts := fs.String("companion-exts", strings.Join(sessionCfg.Global.CompanionExtensions, ","), "伴随文件扩展名白名单 (如 wav, acr, exf，逗号或空格分隔)")
-	inPlace := fs.Bool("in-place", sessionCfg.GetBoolOption(domain.CapDateArchive, "in_place", false), "原地规范重命名，不建立 YYYY/MMDD 子目录")
-	geosync := fs.String("geosync", sessionCfg.GetStringOption(domain.CapGPXMatching, "geosync", "0"), "传递给 exiftool 的 geosync 偏移值")
-	rawExts := fs.String("raw-exts", strings.Join(sessionCfg.Global.RawExtensions, ","), "可识别的 RAW 扩展名，逗号分隔")
-	workers := fs.Int("workers", sessionCfg.Global.Workers, "并发处理的资产组数量")
+	baseDir := fs.String("base-dir", sessionCfg.Global.BaseDir, i18n.T("cliOptBaseDir"))
+	sourceDir := fs.String("source-dir", sessionCfg.Global.SourceDir, i18n.T("cliOptSourceDir"))
+	gpxDir := fs.String("gpx-dir", sessionCfg.Global.GPXDir, i18n.T("cliOptGpxDir"))
+	processedDir := fs.String("processed-dir", sessionCfg.Global.TargetDir, i18n.T("cliOptProcessedDir"))
+	flatMode := fs.Bool("flat", sessionCfg.Global.FlatMode, i18n.T("cliOptFlat"))
+	sidecarPolicy := fs.String("sidecar-policy", sessionCfg.Global.SidecarPolicy, i18n.T("cliOptSidecarPolicy"))
+	sidecarOnly := fs.Bool("sidecar-only", sessionCfg.Global.SidecarOnly, i18n.T("cliOptSidecarOnly"))
+	companionExts := fs.String("companion-exts", strings.Join(sessionCfg.Global.CompanionExtensions, ","), i18n.T("cliOptCompanionExts"))
+	inPlace := fs.Bool("in-place", sessionCfg.GetBoolOption(domain.CapDateArchive, "in_place", false), i18n.T("cliOptInPlace"))
+	geosync := fs.String("geosync", sessionCfg.GetStringOption(domain.CapGPXMatching, "geosync", "0"), i18n.T("cliOptGeosync"))
+	rawExts := fs.String("raw-exts", strings.Join(sessionCfg.Global.RawExtensions, ","), i18n.T("cliOptRawExts"))
+	workers := fs.Int("workers", sessionCfg.Global.Workers, i18n.T("cliOptWorkers"))
 
-	enableGPX := fs.Bool("gpx", true, "启用能力 1: GPX 轨迹匹配与 GPS 修正")
-	enableInterpolate := fs.Bool("interpolate", false, "启用能力 1.5: 根据前后照片时间推算补全 GPS")
-	interpolateWindow := fs.String("interpolate-window", sessionCfg.GetStringOption(domain.CapGPSInterpolate, "window", "15m"), "智能推算最大时间窗口 (如 15m, 30m, 1h)")
-	enableGeocode := fs.Bool("geocode", true, "启用能力 2: 逆地理编码写入元数据")
-	allowNoGPS := fs.Bool("allow-no-gps", sessionCfg.Global.AllowNoGPS, "无 GPS 坐标时允许跳过地名写入直接归档 (软降级)")
-	enableArchive := fs.Bool("archive", true, "启用能力 3: 拍摄日期归档与规范重命名")
-	isTest := fs.Bool("test", sessionCfg.Global.TestBackup, "开启测试备份模式 (处理前自动备份 Inbox 到 Inbox_bak)")
-	isBackup := fs.Bool("backup", false, "同 -test，处理前备份原始文件")
-	backupDir := fs.String("backup-dir", "", "自定义测试备份目录")
-	logDir := fs.String("log-dir", sessionCfg.Global.LogDir, "日志与待补报告目录 (默认 ~/.logs/photools)")
+	enableGPX := fs.Bool("gpx", true, i18n.T("cliOptEnableGpx"))
+	enableInterpolate := fs.Bool("interpolate", false, i18n.T("cliOptInterpolate"))
+	interpolateWindow := fs.String("interpolate-window", sessionCfg.GetStringOption(domain.CapGPSInterpolate, "window", "15m"), i18n.T("cliOptInterpolateWindow"))
+	enableGeocode := fs.Bool("geocode", true, i18n.T("cliOptEnableGeocode"))
+	allowNoGPS := fs.Bool("allow-no-gps", sessionCfg.Global.AllowNoGPS, i18n.T("cliOptAllowNoGps"))
+	enableArchive := fs.Bool("archive", true, i18n.T("cliOptEnableArchive"))
+	isTest := fs.Bool("test", sessionCfg.Global.TestBackup, i18n.T("cliOptTestBackup"))
+	isBackup := fs.Bool("backup", false, i18n.T("cliOptTestBackup"))
+	backupDir := fs.String("backup-dir", "", i18n.T("cliOptBackupDir"))
+	logDir := fs.String("log-dir", sessionCfg.Global.LogDir, i18n.T("cliOptLogDir"))
 
 	_ = fs.Parse(normalizeBoolFlags(fs, os.Args[2:]))
 
@@ -434,15 +482,15 @@ func runOrganizeByDate() {
 	sessionCfg := config.NewSessionConfig(pluginsCfg, "")
 
 	fs := flag.NewFlagSet("organize-by-date", flag.ExitOnError)
-	baseDir := fs.String("base-dir", sessionCfg.Global.BaseDir, "基础工作目录 (可选)")
-	sourceDir := fs.String("source-dir", "", "需要整理的源目录")
-	targetDir := fs.String("target-dir", "", "归档目标根目录")
-	rawExts := fs.String("raw-exts", strings.Join(sessionCfg.Global.RawExtensions, ","), "可识别的 RAW 扩展名，逗号分隔")
-	workers := fs.Int("workers", sessionCfg.Global.Workers, "并发处理数量")
-	isTest := fs.Bool("test", sessionCfg.Global.TestBackup, "开启测试备份模式 (处理前自动备份)")
-	isBackup := fs.Bool("backup", false, "同 -test，处理前备份原始文件")
-	backupDir := fs.String("backup-dir", "", "自定义测试备份目录")
-	logDir := fs.String("log-dir", sessionCfg.Global.LogDir, "日志与待补报告目录 (默认 ~/.logs/photools)")
+	baseDir := fs.String("base-dir", sessionCfg.Global.BaseDir, i18n.T("cliOptBaseDir"))
+	sourceDir := fs.String("source-dir", "", i18n.T("cliOptSourceDir"))
+	targetDir := fs.String("target-dir", "", i18n.T("cliOptProcessedDir"))
+	rawExts := fs.String("raw-exts", strings.Join(sessionCfg.Global.RawExtensions, ","), i18n.T("cliOptRawExts"))
+	workers := fs.Int("workers", sessionCfg.Global.Workers, i18n.T("cliOptWorkers"))
+	isTest := fs.Bool("test", sessionCfg.Global.TestBackup, i18n.T("cliOptTestBackup"))
+	isBackup := fs.Bool("backup", false, i18n.T("cliOptTestBackup"))
+	backupDir := fs.String("backup-dir", "", i18n.T("cliOptBackupDir"))
+	logDir := fs.String("log-dir", sessionCfg.Global.LogDir, i18n.T("cliOptLogDir"))
 
 	_ = fs.Parse(normalizeBoolFlags(fs, os.Args[2:]))
 
@@ -483,10 +531,10 @@ func runOrganizeByDate() {
 
 func runRestoreTest(defaultBaseDir string) {
 	fs := flag.NewFlagSet("restore-test", flag.ExitOnError)
-	baseDir := fs.String("base-dir", defaultBaseDir, "工作根目录 (包含 Inbox/Inbox_bak/Processed)")
-	backupDir := fs.String("backup-dir", "", "备份源目录 (默认 <base-dir>/Inbox_bak)")
-	targetDir := fs.String("target-dir", "", "还原目标目录 (默认 <base-dir>/Inbox)")
-	cleanProcessed := fs.Bool("clean", false, "是否同时清理 Processed 目录下的测试归档文件")
+	baseDir := fs.String("base-dir", defaultBaseDir, i18n.T("cliOptBaseDir"))
+	backupDir := fs.String("backup-dir", "", i18n.T("cliOptBackupDir"))
+	targetDir := fs.String("target-dir", "", i18n.T("cliOptSourceDir"))
+	cleanProcessed := fs.Bool("clean", false, i18n.T("cliOptCleanProcessed"))
 
 	_ = fs.Parse(normalizeBoolFlags(fs, os.Args[2:]))
 
@@ -519,9 +567,9 @@ func runRestoreTest(defaultBaseDir string) {
 
 func runBackup(defaultBaseDir string) {
 	fs := flag.NewFlagSet("backup", flag.ExitOnError)
-	baseDir := fs.String("base-dir", defaultBaseDir, "工作根目录 (包含 Inbox/Inbox_bak)")
-	sourceDir := fs.String("source-dir", "", "待备份源目录 (默认 <base-dir>/Inbox)")
-	backupDir := fs.String("backup-dir", "", "快照目标目录 (默认 <base-dir>/Inbox_bak)")
+	baseDir := fs.String("base-dir", defaultBaseDir, i18n.T("cliOptBaseDir"))
+	sourceDir := fs.String("source-dir", "", i18n.T("cliOptSourceDir"))
+	backupDir := fs.String("backup-dir", "", i18n.T("cliOptBackupDir"))
 
 	_ = fs.Parse(normalizeBoolFlags(fs, os.Args[2:]))
 

@@ -9,6 +9,7 @@ import (
 	"github.com/vincentchyu/photools/internal/domain"
 	"github.com/vincentchyu/photools/internal/engine"
 	"github.com/vincentchyu/photools/internal/exiftool"
+	"github.com/vincentchyu/photools/internal/i18n"
 )
 
 // Capability 封装按拍摄日期归档与规范重命名能力 (能力 3)
@@ -19,7 +20,6 @@ type Capability struct {
 	inPlace      bool
 	priority     int
 	initOnce     sync.Once
-	initErr      error
 	lastReport   domain.PluginInitReport
 }
 
@@ -33,7 +33,7 @@ type Config struct {
 	Priority       int
 }
 
-// NewCapability 实例化日期归档能力
+// NewCapability 创建日期归档能力插件
 func NewCapability(cfg Config) *Capability {
 	runner := cfg.Runner
 	if runner == nil {
@@ -61,11 +61,11 @@ func (c *Capability) ID() domain.CapabilityID {
 }
 
 func (c *Capability) Name() string {
-	return "拍摄日期归档与规范重命名"
+	return i18n.T("capArchiveName")
 }
 
 func (c *Capability) Description() string {
-	return "根据 EXIF 拍摄日期重命名并在 Processed/YYYY/MMDD/ 目录下归档整组拍摄单元"
+	return i18n.T("capArchiveDesc")
 }
 
 func (c *Capability) RequiredStage() domain.PipelineStage {
@@ -81,8 +81,8 @@ func (c *Capability) SupportedOptions() []domain.OptionSpec {
 	return []domain.OptionSpec{
 		{
 			Key:          "in_place",
-			Name:         "原地规范重命名模式 (In-Place)",
-			Description:  "true 表示在源目录下就地重命名，不建立 Processed/YYYY/MMDD/ 分层目录",
+			NameKey:      "optInPlaceName",
+			DescKey:      "optInPlaceDesc",
 			Type:         domain.OptionTypeBool,
 			DefaultValue: false,
 			Choices:      []string{"false", "true"},
@@ -117,8 +117,8 @@ func (c *Capability) Init(ctx context.Context, report func(domain.PluginInitRepo
 			c.lastReport = domain.PluginInitReport{
 				PluginID: c.ID(),
 				Name:     c.Name(),
-				Stage:    "规则就绪",
-				Message:  "拍摄日期归档引擎与规范化重命名模板已就绪",
+				Stage:    i18n.T("statusReady"),
+				Message:  i18n.T("logArchiveSelfCheckReady"),
 				Percent:  1.0,
 				Status:   domain.HealthReady,
 			}
@@ -128,7 +128,7 @@ func (c *Capability) Init(ctx context.Context, report func(domain.PluginInitRepo
 	if report != nil && c.lastReport.Name != "" {
 		report(c.lastReport)
 	}
-	return c.initErr
+	return nil
 }
 
 // PlanPrecheck 预检拍摄日期与归档目标路径
@@ -149,7 +149,7 @@ func (c *Capability) PlanPrecheck(ctx context.Context, actx *domain.AssetContext
 	if dateStr == "" {
 		return domain.CapabilityPlan{
 			CanProcess: false,
-			ActionDesc: "保留在原目录（缺少拍摄时间）",
+			ActionDesc: i18n.T("actionArchiveKeepMissingTime"),
 			Warning:    "未检测到 DateTimeOriginal 拍摄日期",
 		}
 	}
@@ -161,18 +161,18 @@ func (c *Capability) PlanPrecheck(ctx context.Context, actx *domain.AssetContext
 		sourceFile := actx.Asset.PrimaryPath()
 		targetDir = filepath.Dir(sourceFile)
 		newBase := c.archiver.CalculateNormalizedName(actx.Asset.BaseName, dateStr)
-		actionDesc = fmt.Sprintf("原地规范重命名 -> %s", newBase)
+		actionDesc = fmt.Sprintf("%s -> %s", i18n.T("tuiMenuInPlaceBadge"), newBase)
 	} else {
 		var err error
 		targetDir, err = c.archiver.BuildArchiveDir(c.processedDir, dateStr)
 		if err != nil {
 			return domain.CapabilityPlan{
 				CanProcess: false,
-				ActionDesc: "无法归档",
+				ActionDesc: i18n.T("actionArchiveFailed"),
 				Warning:    fmt.Sprintf("计算归档路径失败: %v", err),
 			}
 		}
-		actionDesc = fmt.Sprintf("归档至 %s/", filepath.Base(targetDir))
+		actionDesc = fmt.Sprintf(i18n.T("actionArchiveMove"), filepath.Base(targetDir)+"/")
 	}
 
 	return domain.CapabilityPlan{
@@ -222,9 +222,9 @@ func (c *Capability) ExecuteProcess(
 	actx.NewBaseName = newBase
 
 	if sendEvent != nil {
-		msg := fmt.Sprintf("已归档到 %s/ (%s)", filepath.Base(targetDir), newBase)
+		msg := fmt.Sprintf(i18n.T("logArchiveMovedSuccess"), filepath.Base(targetDir), newBase)
 		if c.inPlace {
-			msg = fmt.Sprintf("已原地规范重命名为: %s", newBase)
+			msg = fmt.Sprintf(i18n.T("logArchiveInPlaceSuccess"), newBase)
 		}
 		sendEvent(
 			domain.ProgressEvent{

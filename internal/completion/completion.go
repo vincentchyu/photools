@@ -105,6 +105,7 @@ _photools() {
             local -a subcommands
             subcommands=(
                 'tui:在交互终端中启动全功能可视化摄影处理工作台 (推荐)'
+                'language:查看或切换全局界面与提示语言 (zh-CN / en-US)'
                 'geotag:根据 GPX 轨迹时间轴为照片批量修正写入 GPS 并归档'
                 'geocode:[独立能力] 为已有 GPS 坐标的照片批量写入离线中文地名元数据'
                 'pipeline:[复合流水线] 自由勾选组合 [GPX修正/逆地理地名/拍摄日归档]'
@@ -230,7 +231,7 @@ func GenerateBash(w io.Writer) {
     local cur prev words cword
     _init_completion || return
 
-    local commands="tui geotag geocode pipeline organize-by-date restore-test geodata completion version help"
+    local commands="tui language geotag geocode pipeline organize-by-date restore-test geodata completion version help"
     local geodata_cmds="list install remove info test"
     local continents="china asia europe north-america oceania south-america africa all"
     local completion_subcmds="install zsh bash fish"
@@ -294,6 +295,7 @@ complete -F _photools_complete photools ./photools
 func GenerateFish(w io.Writer) {
 	script := `complete -c photools -f
 complete -c photools -n "__fish_use_subcommand" -a tui -d "在交互终端中启动可视化摄影处理工作台"
+complete -c photools -n "__fish_use_subcommand" -a language -d "查看或切换全局界面与提示语言 (zh-CN / en-US)"
 complete -c photools -n "__fish_use_subcommand" -a geotag -d "根据 GPX 轨迹为照片批量修正写入 GPS 并归档"
 complete -c photools -n "__fish_use_subcommand" -a geocode -d "为已有 GPS 坐标的照片批量写入离线中文地名元数据"
 complete -c photools -n "__fish_use_subcommand" -a pipeline -d "自由勾选组合流水线 [GPX修正/逆地理地名/拍摄日归档]"

@@ -41,16 +41,6 @@ public struct ContentView: View {
                 .help(LanguageManager.shared.text(.refreshHelp))
                 .pulseOnHover(scale: 1.08, glowColor: .green)
 
-                if store.runState != .idle && !store.runState.isRunning {
-                    Button {
-                        store.resetTaskStatus()
-                    } label: {
-                        Label(LanguageManager.shared.text(.clearStatus), systemImage: "arrow.counterclockwise.circle")
-                    }
-                    .help(LanguageManager.shared.text(.clearStatusHelp))
-                    .pulseOnHover(scale: 1.08, glowColor: .orange)
-                }
-
                 Divider()
 
                 if store.runState.isRunning {

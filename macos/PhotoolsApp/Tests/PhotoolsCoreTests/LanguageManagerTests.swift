@@ -41,4 +41,35 @@ final class LanguageManagerTests: XCTestCase {
         XCTAssertTrue(AppLanguage.zhHans.isChinese)
         XCTAssertFalse(AppLanguage.en.isChinese)
     }
+
+    func testDiskConfigPriority() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let jsonURL = tempDir.appendingPathComponent("plugins.json")
+        let jsonStr = """
+        {
+            "global": {
+                "language": "en-US",
+                "gpx_dir": "/custom/gpx",
+                "log_dir": "/custom/logs",
+                "workers": 8
+            }
+        }
+        """
+        try jsonStr.write(to: jsonURL, atomically: true, encoding: .utf8)
+
+        // 1. 验证 DiskConfigLoader
+        let diskGlobal = DiskConfigLoader.load(from: jsonURL)
+        XCTAssertNotNil(diskGlobal)
+        XCTAssertEqual(diskGlobal?.language, "en-US")
+        XCTAssertEqual(diskGlobal?.gpxDir, "/custom/gpx")
+        XCTAssertEqual(diskGlobal?.workers, 8)
+
+        // 2. 验证 LanguageManager 优先加载磁盘配置
+        let manager = LanguageManager(configURL: jsonURL)
+        XCTAssertEqual(manager.currentLanguage, .en)
+        XCTAssertFalse(manager.currentLanguage.isChinese)
+    }
 }

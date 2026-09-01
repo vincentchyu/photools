@@ -38,4 +38,20 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Codable, Sendable {
     public var isChinese: Bool {
         effectiveLanguageCode == "zh-Hans"
     }
+
+    /// 从 plugins.json 中的 language 字符串 (如 zh-CN / en-US / zh / en) 转换
+    public static func fromConfigString(_ str: String) -> AppLanguage {
+        let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if trimmed.starts(with: "zh") {
+            return .zhHans
+        } else if trimmed.starts(with: "en") {
+            return .en
+        }
+        return .system
+    }
+
+    /// 转换为标准 Go/i18n 规范的 language 字符串 (zh-CN / en-US)
+    public var toConfigString: String {
+        isChinese ? "zh-CN" : "en-US"
+    }
 }

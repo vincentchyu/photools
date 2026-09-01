@@ -34,6 +34,7 @@ public struct PipelineRunOptions: Equatable, Sendable {
     public var enableArchive: Bool
     public var testBackup: Bool
     public var backupDirectory: String
+    public var language: String
 
     public init(
         baseDirectory: String = "",
@@ -54,7 +55,8 @@ public struct PipelineRunOptions: Equatable, Sendable {
         allowNoGPS: Bool = false,
         enableArchive: Bool = true,
         testBackup: Bool = false,
-        backupDirectory: String = ""
+        backupDirectory: String = "",
+        language: String = "zh-CN"
     ) {
         self.baseDirectory = baseDirectory
         self.sourceDirectory = sourceDirectory
@@ -75,6 +77,7 @@ public struct PipelineRunOptions: Equatable, Sendable {
         self.enableArchive = enableArchive
         self.testBackup = testBackup
         self.backupDirectory = backupDirectory
+        self.language = language
     }
 }
 

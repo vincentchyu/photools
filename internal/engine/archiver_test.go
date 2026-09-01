@@ -188,9 +188,47 @@ func TestArchiver_MoveAssetWithCompoundXMP(t *testing.T) {
 		t.Errorf("目标 JPG 文件不存在: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(targetDir, "DSC_2026-01-01_2948.nef.xmp")); err != nil {
-		t.Errorf("目标 .nef.xmp 文件不存在: %v", err)
+		t.Errorf("目标 RAW XMP 文件不存在: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(targetDir, "DSC_2026-01-01_2948.jpg.xmp")); err != nil {
-		t.Errorf("目标 .jpg.xmp 文件不存在: %v", err)
+		t.Errorf("目标 JPG XMP 文件不存在: %v", err)
+	}
+}
+
+// TestArchiver_InPlaceRename_CaseInsensitiveNoSelfConflict 验证在同目录下大写扩展名（如 .NEF / .JPG）原地重命名为小写规范名时不会误报冲突
+func TestArchiver_InPlaceRename_CaseInsensitiveNoSelfConflict(t *testing.T) {
+	tempDir := t.TempDir()
+
+	raw := filepath.Join(tempDir, "DSC_2025-10-09_438.NEF")
+	jpg := filepath.Join(tempDir, "DSC_2025-10-09_438.JPG")
+	xmp := filepath.Join(tempDir, "DSC_2025-10-09_438.NEF.xmp")
+
+	_ = os.WriteFile(raw, []byte("raw_content"), 0o644)
+	_ = os.WriteFile(jpg, []byte("jpg_content"), 0o644)
+	_ = os.WriteFile(xmp, []byte("xmp_content"), 0o644)
+
+	archiver := NewArchiver()
+
+	// 1. 检查冲突应该返回 false
+	conflict, conflictFile := archiver.CheckConflict([]string{raw, jpg, xmp}, tempDir, "DSC_2025-10-09_438")
+	if conflict {
+		t.Fatalf("原地重命名不应被误判为冲突，冲突文件: %s", conflictFile)
+	}
+
+	// 2. 执行原地重命名应成功
+	err := archiver.MoveFilesWithRename([]string{raw, jpg, xmp}, tempDir, "DSC_2025-10-09_438")
+	if err != nil {
+		t.Fatalf("原地重命名执行失败: %v", err)
+	}
+
+	// 3. 验证规范化小写文件存在
+	if _, err := os.Stat(filepath.Join(tempDir, "DSC_2025-10-09_438.nef")); err != nil {
+		t.Errorf("原地规范化后 RAW 文件不存在: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, "DSC_2025-10-09_438.jpg")); err != nil {
+		t.Errorf("原地规范化后 JPG 文件不存在: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, "DSC_2025-10-09_438.nef.xmp")); err != nil {
+		t.Errorf("原地规范化后 XMP 文件不存在: %v", err)
 	}
 }

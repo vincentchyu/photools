@@ -3,6 +3,7 @@ package common
 import (
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"time"
 )
 
@@ -229,14 +230,29 @@ func (k IssueKind) String() string {
 }
 
 // ==========================================
-// 6. 全局系统常量 (严禁魔法值)
+// 6. 全局系统常量与动态版本 (严禁魔法值)
 // ==========================================
 
-const (
-	// CurrentVersion 当前发布版本号
-	CurrentVersion = "v0.0.2"
+var (
+	// CurrentVersion 当前发布版本号（支持编译期 -ldflags -X 动态注入）
+	CurrentVersion = "v0.0.3"
 	// DefaultProcessorName photools 全局处理引擎名称与版本标识
 	DefaultProcessorName = "photools " + CurrentVersion
+)
+
+func init() {
+	// 如果编译期没有通过 -ldflags 注入（如 go install），尝试从 Go 构建元数据中读取 tag 版本
+	if CurrentVersion == "v0.0.3" || CurrentVersion == "" {
+		if info, ok := debug.ReadBuildInfo(); ok {
+			if info.Main.Version != "" && info.Main.Version != "(devel)" {
+				CurrentVersion = info.Main.Version
+				DefaultProcessorName = "photools " + CurrentVersion
+			}
+		}
+	}
+}
+
+const (
 	// DefaultWorkers 默认并发协程数
 	DefaultWorkers = 8
 	// DefaultGeosync 默认时间同步修正偏移

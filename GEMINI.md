@@ -147,5 +147,24 @@
    - **桌面通道 (`Casks/photools.rb`)**：`brew install --cask vincentchyu/tap/photools`，面向桌面摄影师。自动拉取 `photools-macOS.dmg` 并将 `PhotoolsApp.app` 安装至 `/Applications`；
 2. **自动化发布闭环**：
    - 发布新版本时执行 `./script/release_homebrew.sh <tag>` 自动计算源码 Tarball 与 DMG 的 SHA256 并更新 Formula/Cask；
-   - 配合 GitHub Actions (`.github/workflows/homebrew-release.yml`) 自动同步推送到 `vincentchyu/homebrew-tap` 仓库。
+   - 配合 GitHub Actions (`.github/workflows/homebrew-release.yml`) 自动同步推送到 `vincentchyu/homebrew-tap` 仓库；
+   - **动态 Git Tag 注入与 BuildInfo 兜底**：编译期通过 `-ldflags "-s -w -X 'github.com/vincentchyu/photools/common.CurrentVersion=$(git describe --tags --always)' -X 'main.Version=$(git describe --tags --always)'"` 动态注入版本，结合 `runtime/debug.ReadBuildInfo()` 智能兜底。
+
+---
+
+## 9. 全局多语言 (i18n) 统一字典与运行时规约
+
+详细架构与开发规约见独立技术文档：[`docs/I18N_ARCHITECTURE_GUIDE.md`](docs/I18N_ARCHITECTURE_GUIDE.md)。
+
+1. **单一事实源 (Single Source of Truth) JSON**：
+   - 全局字典统一定义在 `locales/zh-CN.json`（简体中文）与 `locales/en-US.json`（英文）中；
+   - Go 端通过 `locales/locales.go` 的 `//go:embed *.json` 静态内嵌，运行时零额外 I/O 损耗；
+   - Swift macOS 端共用相同键名模型并由 `LanguageManager.swift` 维护；
+2. **全链路运行时事件与控制台日志 100% 本地化**：
+   - 流水线调度器、阶段屏障流转、四大能力插件内部执行日志、异常诊断建议与落盘日志（`~/.logs/photools/photools_latest.log`）全部基于 `i18n.T` 动态本地化；
+   - 阶段名称通过 `domain.StageDisplayName` 动态投影，彻底杜绝日志中硬编码中文字符；
+3. **默认中文优先、热切换与自动化守卫测试**：
+   - 默认模式符合核心摄影师用户画像（`zh-CN` 优先），支持 CLI `--lang [zh|en]`、TUI 快捷键 `[l]`、macOS 设置面板无缝热切换；
+   - 强制运行 `internal/i18n/i18n_guard_test.go` 验证中英文字典 100% 镜像对称与纯英文模式下零中文字符泄漏。
+
 

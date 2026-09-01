@@ -9,17 +9,17 @@ class Photools < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/vincentchyu/photools/releases/download/v0.0.3/photools-darwin-arm64"
-      sha256 "9ddea6edde7261d94fb4b51532aa6cb766372cd3b89fe07f17494ccd55bf22ed"
+      sha256 "e06edd5e782f2847dac164e6170d10dac629aba22d65cef49b9695a8c06b5d0b"
     else
       url "https://github.com/vincentchyu/photools/releases/download/v0.0.3/photools-darwin-amd64"
-      sha256 "5120ae4751de765722c81e3421fe21a7f5ae977b3b80e9580c203cc7d98bcfd0"
+      sha256 "593fd82a7952e42ab41239135e794356a2f1589ea49ee27d9e47772601c643a5"
     end
   end
 
   on_linux do
     if Hardware::CPU.intel?
       url "https://github.com/vincentchyu/photools/releases/download/v0.0.3/photools-linux-amd64"
-      sha256 "2deea0ab515349fe2d7b687146fc2ff6d026b07245c647524b5ff35ac7bf8181"
+      sha256 "7e12c2641756d672edda36c534ec121c59bb00e78dbb605c722ccdf931157d11"
     end
   end
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/vincentchyu/photools/internal/domain"
 	"github.com/vincentchyu/photools/internal/exiftool"
+	"github.com/vincentchyu/photools/internal/i18n"
 	"github.com/vincentchyu/photools/pkg/geocoding"
 )
 
@@ -56,11 +57,11 @@ func (c *Capability) ID() domain.CapabilityID {
 }
 
 func (c *Capability) Name() string {
-	return "离线逆地理编码 (Reverse Geocode)"
+	return i18n.T("capGeocodeName")
 }
 
 func (c *Capability) Description() string {
-	return "根据 GPS 经纬度坐标检索国家/省份/城市/区县/POI，写入照片 IPTC 与 XMP 地名标签"
+	return i18n.T("capGeocodeDesc")
 }
 
 func (c *Capability) RequiredStage() domain.PipelineStage {
@@ -76,8 +77,8 @@ func (c *Capability) SupportedOptions() []domain.OptionSpec {
 	return []domain.OptionSpec{
 		{
 			Key:          "language",
-			Name:         "地名输出语言格式 (Language)",
-			Description:  "写入照片元数据的地名语言（默认 zh-CN 规范中文地名）",
+			NameKey:      "optGeocodeLangName",
+			DescKey:      "optGeocodeLangDesc",
 			Type:         domain.OptionTypeString,
 			DefaultValue: "zh-CN",
 			Choices:      []string{"zh-CN", "en"},
@@ -150,12 +151,12 @@ func (c *Capability) PlanPrecheck(ctx context.Context, actx *domain.AssetContext
 			actx.SetLocation(loc)
 			return domain.CapabilityPlan{
 				CanProcess: true,
-				ActionDesc: fmt.Sprintf("写入地名 (%s)", loc.FormatSummary()),
+				ActionDesc: fmt.Sprintf(i18n.T("actionGeocodeWrite"), loc.FormatSummary()),
 			}
 		}
 		return domain.CapabilityPlan{
 			CanProcess: false,
-			ActionDesc: "未命中离线库",
+			ActionDesc: i18n.T("actionGeocodeMiss"),
 			Warning:    fmt.Sprintf("坐标 (%.4f, %.4f) 未在离线地理库中命中有效地点", lat, lon),
 		}
 	}
@@ -163,14 +164,14 @@ func (c *Capability) PlanPrecheck(ctx context.Context, actx *domain.AssetContext
 	if c.allowNoGPS {
 		return domain.CapabilityPlan{
 			CanProcess: false,
-			ActionDesc: "跳过地名（无 GPS 坐标，允许降级归档）",
+			ActionDesc: i18n.T("actionGeocodeSkipNoGPS"),
 			Warning:    "",
 		}
 	}
 
 	return domain.CapabilityPlan{
 		CanProcess: false,
-		ActionDesc: "等待 GPS 坐标",
+		ActionDesc: i18n.T("actionGeocodeWaiting"),
 		Warning:    "当前资产尚无 GPS 坐标",
 	}
 }
@@ -284,7 +285,7 @@ func (c *Capability) ExecuteProcess(ctx context.Context, actx *domain.AssetConte
 		sendEvent(domain.ProgressEvent{
 			Stage:   domain.StageGeocode,
 			Level:   domain.LevelSuccess,
-			Message: fmt.Sprintf("已写入地名元数据：%s (%s)", actx.Asset.DisplayName(), loc.FormatSummary()),
+			Message: fmt.Sprintf(i18n.T("logGeocodeTaggedSuccess"), actx.Asset.DisplayName(), loc.FormatSummary()),
 			Asset:   &actx.Asset,
 		})
 	}

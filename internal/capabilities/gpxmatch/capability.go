@@ -10,6 +10,7 @@ import (
 
 	"github.com/vincentchyu/photools/internal/domain"
 	"github.com/vincentchyu/photools/internal/exiftool"
+	"github.com/vincentchyu/photools/internal/i18n"
 )
 
 // Config 封装 GPX 匹配能力初始化配置
@@ -54,11 +55,11 @@ func (c *Capability) ID() domain.CapabilityID {
 }
 
 func (c *Capability) Name() string {
-	return "GPX 轨迹匹配与 GPS 修正"
+	return i18n.T("capGpxName")
 }
 
 func (c *Capability) Description() string {
-	return "从 GPX 目录读取轨迹点时间轴，为 RAW 照片写入经纬度并同步到 JPG 与 XMP"
+	return i18n.T("capGpxDesc")
 }
 
 func (c *Capability) RequiredStage() domain.PipelineStage {
@@ -74,8 +75,8 @@ func (c *Capability) SupportedOptions() []domain.OptionSpec {
 	return []domain.OptionSpec{
 		{
 			Key:          "geosync",
-			Name:         "时钟偏差偏移值 (Geosync)",
-			Description:  "相机与 GPS 轨迹的时间偏差补偿值 (如 0, +00:00:05, -00:01:00)",
+			NameKey:      "optGeosyncName",
+			DescKey:      "optGeosyncDesc",
 			Type:         domain.OptionTypeString,
 			DefaultValue: "0",
 			Choices:      []string{"0", "+00:00:05", "-00:01:00"},
@@ -111,8 +112,8 @@ func (c *Capability) Init(ctx context.Context, report func(domain.PluginInitRepo
 			report(domain.PluginInitReport{
 				PluginID: c.ID(),
 				Name:     c.Name(),
-				Stage:    "环境自检",
-				Message:  "正在检查 ExifTool 运行环境与版本...",
+				Stage:    i18n.T("stageInit"),
+				Message:  i18n.T("logGpxSelfCheckChecking"),
 				Percent:  0.3,
 				Status:   domain.HealthReady,
 			})
@@ -124,8 +125,8 @@ func (c *Capability) Init(ctx context.Context, report func(domain.PluginInitRepo
 			c.lastReport = domain.PluginInitReport{
 				PluginID: c.ID(),
 				Name:     c.Name(),
-				Stage:    "自检失败",
-				Message:  "未在系统 PATH 中找到可用 exiftool 命令行工具",
+				Stage:    i18n.T("stageInit"),
+				Message:  i18n.T("logGpxSelfCheckFailed"),
 				Percent:  1.0,
 				Status:   domain.HealthFailed,
 				Err:      err,
@@ -137,8 +138,8 @@ func (c *Capability) Init(ctx context.Context, report func(domain.PluginInitRepo
 		c.lastReport = domain.PluginInitReport{
 			PluginID: c.ID(),
 			Name:     c.Name(),
-			Stage:    "自检完成",
-			Message:  fmt.Sprintf("ExifTool 核心引擎就绪 (v%s)", ver),
+			Stage:    i18n.T("statusReady"),
+			Message:  fmt.Sprintf(i18n.T("logGpxSelfCheckReady"), ver),
 			Percent:  1.0,
 			Status:   domain.HealthReady,
 		}
@@ -156,7 +157,7 @@ func (c *Capability) PlanPrecheck(ctx context.Context, actx *domain.AssetContext
 	if primary == "" {
 		return domain.CapabilityPlan{
 			CanProcess: false,
-			ActionDesc: "跳过（无主文件）",
+			ActionDesc: i18n.T("actionInterpolateSkipNoPrimary"),
 		}
 	}
 
@@ -166,7 +167,7 @@ func (c *Capability) PlanPrecheck(ctx context.Context, actx *domain.AssetContext
 		if err != nil {
 			return domain.CapabilityPlan{
 				CanProcess: false,
-				ActionDesc: "读取失败",
+				ActionDesc: i18n.T("tuiMenuHealthFailed"),
 				Warning:    fmt.Sprintf("无法读取主文件元数据: %v", err),
 			}
 		}
@@ -178,7 +179,7 @@ func (c *Capability) PlanPrecheck(ctx context.Context, actx *domain.AssetContext
 	if meta.DateTimeOriginal == "" {
 		return domain.CapabilityPlan{
 			CanProcess: false,
-			ActionDesc: "缺少拍摄时间",
+			ActionDesc: i18n.T("actionGpxMissingTime"),
 			Warning:    "主文件缺少 DateTimeOriginal 拍摄时间元数据",
 		}
 	}
@@ -189,13 +190,13 @@ func (c *Capability) PlanPrecheck(ctx context.Context, actx *domain.AssetContext
 		if meta.GPSPosition != "" || meta.HasGPS() || actx.HasGPS {
 			return domain.CapabilityPlan{
 				CanProcess: false,
-				ActionDesc: "无对应 GPX 轨迹，安全保留相机自带 GPS",
+				ActionDesc: i18n.T("actionGpxKeepExisting"),
 				Warning:    "",
 			}
 		}
 		return domain.CapabilityPlan{
 			CanProcess: false,
-			ActionDesc: "等待 GPX 轨迹文件",
+			ActionDesc: i18n.T("actionGpxWaiting"),
 			Warning:    "未找到该拍摄日期的 GPX 轨迹文件，无法进行时间轴匹配",
 		}
 	}
@@ -207,12 +208,12 @@ func (c *Capability) PlanPrecheck(ctx context.Context, actx *domain.AssetContext
 	if meta.GPSPosition != "" || meta.HasGPS() || actx.HasGPS {
 		return domain.CapabilityPlan{
 			CanProcess: true,
-			ActionDesc: fmt.Sprintf("校验相机 GPS 是否漂移 (%s)", strings.Join(gpxNames, ",")),
+			ActionDesc: fmt.Sprintf(i18n.T("actionGpxVerify"), strings.Join(gpxNames, ",")),
 		}
 	}
 	return domain.CapabilityPlan{
 		CanProcess: true,
-		ActionDesc: fmt.Sprintf("匹配轨迹写入 GPS (%s)", strings.Join(gpxNames, ",")),
+		ActionDesc: fmt.Sprintf(i18n.T("actionGpxMatch"), strings.Join(gpxNames, ",")),
 	}
 }
 
@@ -271,7 +272,7 @@ func (c *Capability) ExecuteProcess(ctx context.Context, actx *domain.AssetConte
 				sendEvent(domain.ProgressEvent{
 					Stage:   domain.StageGeotag,
 					Level:   domain.LevelInfo,
-					Message: fmt.Sprintf("[GPX 轨迹匹配] ⏭️ 无对应 GPX 轨迹，安全保留相机自带 GPS：%s (%s)", actx.Asset.DisplayName(), origGPSPos),
+					Message: fmt.Sprintf(i18n.T("logGpxKeepCameraGps"), actx.Asset.DisplayName(), origGPSPos),
 					Asset:   &actx.Asset,
 				})
 			}
@@ -317,7 +318,7 @@ func (c *Capability) ExecuteProcess(ctx context.Context, actx *domain.AssetConte
 				sendEvent(domain.ProgressEvent{
 					Stage:   domain.StageGeotag,
 					Level:   domain.LevelInfo,
-					Message: fmt.Sprintf("[GPX 轨迹匹配] ⏭️ 相机原生 GPS 准确（与轨迹一致），无需校准：%s (%s)", actx.Asset.DisplayName(), origGPSPos),
+					Message: fmt.Sprintf(i18n.T("logGpxDriftVerifiedOk"), actx.Asset.DisplayName(), origGPSPos),
 					Asset:   &actx.Asset,
 				})
 			}
@@ -356,7 +357,7 @@ func (c *Capability) ExecuteProcess(ctx context.Context, actx *domain.AssetConte
 					sendEvent(domain.ProgressEvent{
 						Stage:   domain.StageGeotag,
 						Level:   domain.LevelInfo,
-						Message: fmt.Sprintf("[GPX 轨迹匹配] ⏭️ 相机原生 GPS 准确（与轨迹一致），无需校准：%s (%s)", actx.Asset.DisplayName(), origGPSPos),
+						Message: fmt.Sprintf(i18n.T("logGpxDriftVerifiedOk"), actx.Asset.DisplayName(), origGPSPos),
 						Asset:   &actx.Asset,
 					})
 				}
@@ -398,7 +399,7 @@ func (c *Capability) ExecuteProcess(ctx context.Context, actx *domain.AssetConte
 					sendEvent(domain.ProgressEvent{
 						Stage:   domain.StageGeotag,
 						Level:   domain.LevelInfo,
-						Message: fmt.Sprintf("[GPX 轨迹匹配] ⏭️ 相机原生 GPS 准确（与轨迹一致），无需校准：%s (%s)", actx.Asset.DisplayName(), origGPSPos),
+						Message: fmt.Sprintf(i18n.T("logGpxDriftVerifiedOk"), actx.Asset.DisplayName(), origGPSPos),
 						Asset:   &actx.Asset,
 					})
 				}
@@ -434,7 +435,7 @@ func (c *Capability) ExecuteProcess(ctx context.Context, actx *domain.AssetConte
 				sendEvent(domain.ProgressEvent{
 					Stage:   domain.StageGeotag,
 					Level:   domain.LevelInfo,
-					Message: fmt.Sprintf("[GPX 轨迹匹配] ⏭️ 相机原生 GPS 准确（与轨迹一致），无需校准：%s (%s)", actx.Asset.DisplayName(), origGPSPos),
+					Message: fmt.Sprintf(i18n.T("logGpxDriftVerifiedOk"), actx.Asset.DisplayName(), origGPSPos),
 					Asset:   &actx.Asset,
 				})
 			}
@@ -471,14 +472,14 @@ func (c *Capability) ExecuteProcess(ctx context.Context, actx *domain.AssetConte
 			sendEvent(domain.ProgressEvent{
 				Stage:   domain.StageGeotag,
 				Level:   domain.LevelSuccess,
-				Message: fmt.Sprintf("GPS 漂移校准并同步成功：%s (校准前: %s -> 校准后: %s) [匹配轨迹: %s]", actx.Asset.DisplayName(), origGPSPos, actx.GetMetadata().GPSPosition, trackInfo),
+				Message: fmt.Sprintf(i18n.T("logGpxDriftCalibratedSuccess"), actx.Asset.DisplayName(), origGPSPos, actx.GetMetadata().GPSPosition, trackInfo),
 				Asset:   &actx.Asset,
 			})
 		} else {
 			sendEvent(domain.ProgressEvent{
 				Stage:   domain.StageGeotag,
 				Level:   domain.LevelSuccess,
-				Message: fmt.Sprintf("GPS 写入并同步成功：%s (%s) [匹配轨迹: %s]", actx.Asset.DisplayName(), actx.GetMetadata().GPSPosition, trackInfo),
+				Message: fmt.Sprintf(i18n.T("logGpxTaggedSuccess"), actx.Asset.DisplayName(), actx.GetMetadata().GPSPosition, trackInfo),
 				Asset:   &actx.Asset,
 			})
 		}

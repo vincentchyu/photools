@@ -125,13 +125,23 @@ func (a *Archiver) CheckConflict(files []string, targetDir, newBaseName string) 
 	for _, source := range files {
 		suffix := a.ExtractFileSuffix(source)
 		target := filepath.Join(targetDir, newBaseName+suffix)
-		// 如果目标文件与源文件路径完全相同（未变更），不判定为冲突
-		if absSrc, err := filepath.Abs(source); err == nil {
-			if absTgt, err := filepath.Abs(target); err == nil && absSrc == absTgt {
+
+		absSrc, errSrc := filepath.Abs(source)
+		absTgt, errTgt := filepath.Abs(target)
+		if errSrc == nil && errTgt == nil {
+			// 1. 如果路径在忽略大小写后完全一致（同目录同文件名，或仅有大小写扩展名差异如 .NEF -> .nef），不判定为外部冲突
+			if strings.EqualFold(absSrc, absTgt) {
 				continue
 			}
 		}
-		if _, err := os.Stat(target); err == nil {
+
+		// 2. 如果目标文件存在，进一步通过 os.SameFile 确认是否为源文件本身
+		if targetFi, err := os.Stat(target); err == nil {
+			if sourceFi, errSrcStat := os.Stat(source); errSrcStat == nil {
+				if os.SameFile(sourceFi, targetFi) {
+					continue
+				}
+			}
 			return true, target
 		}
 	}
@@ -151,11 +161,28 @@ func (a *Archiver) MoveFilesWithRename(files []string, targetDir, newBaseName st
 	for _, source := range files {
 		suffix := a.ExtractFileSuffix(source)
 		target := filepath.Join(targetDir, newBaseName+suffix)
-		if absSrc, err := filepath.Abs(source); err == nil {
-			if absTgt, err := filepath.Abs(target); err == nil && absSrc == absTgt {
+
+		absSrc, errSrc := filepath.Abs(source)
+		absTgt, errTgt := filepath.Abs(target)
+		if errSrc == nil && errTgt == nil {
+			if absSrc == absTgt {
+				// 源文件与目标文件完全一致，无需任何移动或重命名
+				continue
+			}
+			// 在 macOS 大小写不敏感文件系统上，如果同路径仅大小写差异（如 DSC_001.NEF -> DSC_001.nef），
+			// 通过中间临时文件名安全跨越系统对同一大小写别名的覆盖限制
+			if strings.EqualFold(absSrc, absTgt) {
+				tmpTarget := target + fmt.Sprintf(".tmp_%d", time.Now().UnixNano())
+				if err := os.Rename(source, tmpTarget); err != nil {
+					return err
+				}
+				if err := os.Rename(tmpTarget, target); err != nil {
+					return err
+				}
 				continue
 			}
 		}
+
 		if err := os.Rename(source, target); err != nil {
 			return err
 		}

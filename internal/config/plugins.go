@@ -5,21 +5,41 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/vincentchyu/photools/common"
 	"github.com/vincentchyu/photools/internal/domain"
+	"github.com/vincentchyu/photools/internal/i18n"
 )
 
 // PluginMeta 记录单个插件在配置文件中的元数据与优先级设定
 type PluginMeta struct {
-	ID          domain.CapabilityID    `json:"id"`
-	Name        string                 `json:"name"`
-	Priority    int                    `json:"priority"` // 数值越小越优先；同数值归入同一 Phase 并行执行
-	Enabled     bool                   `json:"enabled"`
-	Description string                 `json:"description"`
-	Options     map[string]interface{} `json:"options,omitempty"` // 插件专属自定义扩展参数 (如 {"window": "15m"})
+	ID       domain.CapabilityID    `json:"id"`
+	NameKey  string                 `json:"-"`        // 内存中 i18n 字典键 (不持久化到 JSON)
+	DescKey  string                 `json:"-"`        // 内存中 i18n 字典键 (不持久化到 JSON)
+	Priority int                    `json:"priority"` // 数值越小越优先；同数值归入同一 Phase 并行执行
+	Enabled  bool                   `json:"enabled"`
+	Options  map[string]interface{} `json:"options,omitempty"` // 插件专属自定义扩展参数 (如 {"window": "15m"})
+}
+
+// Title 根据当前语言动态返回插件标题 (100% 字典驱动)
+func (p PluginMeta) Title() string {
+	if p.NameKey != "" {
+		return i18n.T(p.NameKey)
+	}
+	return string(p.ID)
+}
+
+// Desc 根据当前语言动态返回插件说明 (100% 字典驱动)
+func (p PluginMeta) Desc() string {
+	if p.DescKey != "" {
+		return i18n.T(p.DescKey)
+	}
+	return ""
 }
 
 // GetStringOption 获取字符串配置项
@@ -63,44 +83,45 @@ func (p *PluginMeta) GetBoolOption(key string, defaultValue bool) bool {
 
 // PluginsConfig 插件全局持久化配置结构
 type PluginsConfig struct {
-	Plugins []PluginMeta `json:"plugins"`
+	Global  GlobalSettings `json:"global,omitempty"`
+	Plugins []PluginMeta   `json:"plugins"`
 }
 
 var (
 	defaultMetas = []PluginMeta{
 		{
-			ID:          domain.CapGPXMatching,
-			Name:        "GPX 轨迹匹配与 GPS 修正",
-			Priority:    10,
-			Enabled:     true,
-			Description: "从 GPX 目录读取轨迹为 RAW 写入经纬度并同步到 JPG/XMP",
+			ID:       domain.CapGPXMatching,
+			NameKey:  "capGpxName",
+			DescKey:  "capGpxDesc",
+			Priority: 10,
+			Enabled:  true,
 			Options: map[string]interface{}{
 				"geosync": "0",
 			},
 		},
 		{
-			ID:          domain.CapGPSInterpolate,
-			Name:        "GPS 智能邻近推断与时间插值",
-			Priority:    15,
-			Enabled:     true,
-			Description: "根据同批次前后邻近照片时间权重，自动推算补全无轨迹照片 GPS 坐标",
+			ID:       domain.CapGPSInterpolate,
+			NameKey:  "capInterpolateName",
+			DescKey:  "capInterpolateDesc",
+			Priority: 15,
+			Enabled:  true,
 			Options: map[string]interface{}{
 				"window": "15m",
 			},
 		},
 		{
-			ID:          domain.CapReverseGeocode,
-			Name:        "逆地理编码与地名元数据写入",
-			Priority:    20,
-			Enabled:     true,
-			Description: "根据 GPS 坐标检索国家/省/市/区/POI，写入 IPTC/XMP 地名元数据",
+			ID:       domain.CapReverseGeocode,
+			NameKey:  "capGeocodeName",
+			DescKey:  "capGeocodeDesc",
+			Priority: 20,
+			Enabled:  true,
 		},
 		{
-			ID:          domain.CapDateArchive,
-			Name:        "按拍摄日期归档与规范重命名",
-			Priority:    100,
-			Enabled:     true,
-			Description: "提取 EXIF 拍摄日期，规范重命名并安全归档至 Processed/YYYY/MMDD/",
+			ID:       domain.CapDateArchive,
+			NameKey:  "capArchiveName",
+			DescKey:  "capArchiveDesc",
+			Priority: 100,
+			Enabled:  true,
 			Options: map[string]interface{}{
 				"in_place": false,
 			},
@@ -113,7 +134,18 @@ var (
 func DefaultPluginsConfig() PluginsConfig {
 	list := make([]PluginMeta, len(defaultMetas))
 	copy(list, defaultMetas)
-	return PluginsConfig{Plugins: list}
+	return PluginsConfig{
+		Global: GlobalSettings{
+			Language:            "en-US",
+			GPXDir:              DefaultGPXDir(),
+			LogDir:              DefaultLogDir(),
+			SidecarPolicy:       common.PolicySmart.String(),
+			CompanionExtensions: common.DefaultCompanionExtensions,
+			RawExtensions:       common.DefaultRawExtensions,
+			Workers:             runtime.NumCPU(),
+		},
+		Plugins: list,
+	}
 }
 
 // GetConfigPath 返回插件配置文件的全局默认存储路径 ~/.config/photools/plugins.json
@@ -190,6 +222,25 @@ func LoadPluginsConfig(path string) (*PluginsConfig, error) {
 		}
 	}
 
+	// 检查原始配置中是否存在旧版本的冗余文案字段，若存在则触发自愈清洗
+	rawStr := string(data)
+	if strings.Contains(rawStr, "\"name\":") || strings.Contains(rawStr, "\"description\":") ||
+		strings.Contains(rawStr, "\"name_key\":") || strings.Contains(rawStr, "\"desc_key\":") {
+		modified = true
+	}
+
+	// 为所有插件绑定内存中的 NameKey 与 DescKey
+	for i := range loaded.Plugins {
+		p := &loaded.Plugins[i]
+		for _, def := range defaultMetas {
+			if def.ID == p.ID {
+				p.NameKey = def.NameKey
+				p.DescKey = def.DescKey
+				break
+			}
+		}
+	}
+
 	// 补全已有插件中缺失的默认 Options
 	for i := range loaded.Plugins {
 		p := &loaded.Plugins[i]
@@ -236,7 +287,21 @@ func SavePluginsConfig(path string, cfg *PluginsConfig) error {
 		return err
 	}
 
-	data, err := json.MarshalIndent(cfg, "", "  ")
+	// 复制一份副本并精简 GlobalSettings 为纯净持久化字段，彻底杜绝会话临时工作路径被序列化落盘
+	cleanCfg := PluginsConfig{
+		Global: GlobalSettings{
+			Language:            cfg.Global.Language,
+			GPXDir:              cfg.Global.GPXDir,
+			LogDir:              cfg.Global.LogDir,
+			SidecarPolicy:       cfg.Global.SidecarPolicy,
+			CompanionExtensions: cfg.Global.CompanionExtensions,
+			RawExtensions:       cfg.Global.RawExtensions,
+			Workers:             cfg.Global.Workers,
+		},
+		Plugins: cfg.Plugins,
+	}
+
+	data, err := json.MarshalIndent(cleanCfg, "", "  ")
 	if err != nil {
 		return err
 	}

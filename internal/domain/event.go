@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/vincentchyu/photools/common"
+	"github.com/vincentchyu/photools/internal/i18n"
 )
 
 // EventLevel 定义事件严重级别 (指向 common.EventLevel)
@@ -33,6 +34,38 @@ const (
 	StageSummary     = common.StageSummary
 	StageComplete    = common.StageComplete
 )
+
+// StageDisplayName 返回阶段根据当前语言匹配的本地化显示名称
+func StageDisplayName(s PipelineStage) string {
+	switch s {
+	case StageInit:
+		return i18n.T("stageInit")
+	case StageDiscover:
+		return i18n.T("stageDiscover")
+	case StagePrecheck:
+		return i18n.T("stagePrecheck")
+	case StageGeotag:
+		return i18n.T("stageGeotag")
+	case StageInterpolate:
+		return i18n.T("stageInterpolate")
+	case StageGeocode:
+		return i18n.T("stageGeocode")
+	case StageSync:
+		return i18n.T("stageSync")
+	case StageArchive:
+		return i18n.T("stageArchive")
+	case StageBackup:
+		return i18n.T("stageBackup")
+	case StageRestore:
+		return i18n.T("stageRestore")
+	case StageSummary:
+		return i18n.T("stageSummary")
+	case StageComplete:
+		return i18n.T("stageComplete")
+	default:
+		return string(s)
+	}
+}
 
 // ProgressEvent 表示在任务执行期间发送给 UI/TUI/日志的结构化事件
 type ProgressEvent struct {
