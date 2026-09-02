@@ -145,9 +145,9 @@
 1. **双通道架构与分工**：
    - **默认通道 (`Formula/photools.rb`)**：`brew install vincentchyu/tap/photools`，面向开发者与全键盘终端用户。声明 `depends_on "exiftool"` 自动解决核心底层依赖，在 `install` 阶段自动生成并注入 Zsh、Bash、Fish 自动补全脚本；
    - **桌面通道 (`Casks/photools.rb`)**：`brew install --cask vincentchyu/tap/photools`，面向桌面摄影师。自动拉取 `photools-macOS.dmg` 并将 `PhotoolsApp.app` 安装至 `/Applications`；
-2. **自动化发布闭环**：
-   - 发布新版本时执行 `./script/release_homebrew.sh <tag>` 自动计算源码 Tarball 与 DMG 的 SHA256 并更新 Formula/Cask；
-   - 配合 GitHub Actions (`.github/workflows/homebrew-release.yml`) 自动同步推送到 `vincentchyu/homebrew-tap` 仓库；
+2. **本地自动化发布闭环**：
+    - 本地预编译并打包各平台产物后，执行 `./script/release_homebrew.sh <tag> --push` 自动计算本地二进制与 DMG 镜像的
+      SHA256，更新 Formula/Cask 并秒级同步推送至 `vincentchyu/homebrew-tap` 仓库；
    - **动态 Git Tag 注入与 BuildInfo 兜底**：编译期通过 `-ldflags "-s -w -X 'github.com/vincentchyu/photools/common.CurrentVersion=$(git describe --tags --always)' -X 'main.Version=$(git describe --tags --always)'"` 动态注入版本，结合 `runtime/debug.ReadBuildInfo()` 智能兜底。
 
 ---
