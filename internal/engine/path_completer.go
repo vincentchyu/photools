@@ -3,7 +3,7 @@ package engine
 import (
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -15,10 +15,13 @@ func ExpandUserPath(path string) string {
 			return home
 		}
 	}
-	if strings.HasPrefix(path, "~/") || strings.HasPrefix(path, "~\\") {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			return filepath.Join(home, path[2:])
+	if rest, ok := strings.CutPrefix(path, "~/"); ok {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, rest)
+		}
+	} else if rest, ok := strings.CutPrefix(path, "~\\"); ok {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, rest)
 		}
 	}
 	return path
@@ -67,7 +70,7 @@ func CompleteDirectoryPath(input string) (string, []string) {
 		}
 	}
 
-	sort.Strings(matches)
+	slices.Sort(matches)
 
 	if len(matches) == 0 {
 		return input, nil

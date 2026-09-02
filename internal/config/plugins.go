@@ -1,12 +1,13 @@
 package config
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -18,12 +19,12 @@ import (
 
 // PluginMeta 记录单个插件在配置文件中的元数据与优先级设定
 type PluginMeta struct {
-	ID       domain.CapabilityID    `json:"id"`
-	NameKey  string                 `json:"-"`        // 内存中 i18n 字典键 (不持久化到 JSON)
-	DescKey  string                 `json:"-"`        // 内存中 i18n 字典键 (不持久化到 JSON)
-	Priority int                    `json:"priority"` // 数值越小越优先；同数值归入同一 Phase 并行执行
-	Enabled  bool                   `json:"enabled"`
-	Options  map[string]interface{} `json:"options,omitempty"` // 插件专属自定义扩展参数 (如 {"window": "15m"})
+	ID       domain.CapabilityID `json:"id"`
+	NameKey  string              `json:"-"`        // 内存中 i18n 字典键 (不持久化到 JSON)
+	DescKey  string              `json:"-"`        // 内存中 i18n 字典键 (不持久化到 JSON)
+	Priority int                 `json:"priority"` // 数值越小越优先；同数值归入同一 Phase 并行执行
+	Enabled  bool                `json:"enabled"`
+	Options  map[string]any      `json:"options,omitempty"` // 插件专属自定义扩展参数 (如 {"window": "15m"})
 }
 
 // Title 根据当前语言动态返回插件标题 (100% 字典驱动)
@@ -95,7 +96,7 @@ var (
 			DescKey:  "capGpxDesc",
 			Priority: 10,
 			Enabled:  true,
-			Options: map[string]interface{}{
+			Options: map[string]any{
 				"geosync": "0",
 			},
 		},
@@ -105,7 +106,7 @@ var (
 			DescKey:  "capInterpolateDesc",
 			Priority: 15,
 			Enabled:  true,
-			Options: map[string]interface{}{
+			Options: map[string]any{
 				"window": "15m",
 			},
 		},
@@ -122,7 +123,7 @@ var (
 			DescKey:  "capArchiveDesc",
 			Priority: 100,
 			Enabled:  true,
-			Options: map[string]interface{}{
+			Options: map[string]any{
 				"in_place": false,
 			},
 		},
@@ -132,8 +133,6 @@ var (
 
 // DefaultPluginsConfig 返回内置默认的插件配置实例副本
 func DefaultPluginsConfig() PluginsConfig {
-	list := make([]PluginMeta, len(defaultMetas))
-	copy(list, defaultMetas)
 	return PluginsConfig{
 		Global: GlobalSettings{
 			Language:            "en-US",
@@ -144,7 +143,7 @@ func DefaultPluginsConfig() PluginsConfig {
 			RawExtensions:       common.DefaultRawExtensions,
 			Workers:             runtime.NumCPU(),
 		},
-		Plugins: list,
+		Plugins: slices.Clone(defaultMetas),
 	}
 }
 
@@ -247,7 +246,7 @@ func LoadPluginsConfig(path string) (*PluginsConfig, error) {
 		for _, def := range defaultMetas {
 			if def.ID == p.ID && len(def.Options) > 0 {
 				if p.Options == nil {
-					p.Options = make(map[string]interface{})
+					p.Options = make(map[string]any)
 				}
 				for optK, optV := range def.Options {
 					if _, exists := p.Options[optK]; !exists {
@@ -260,9 +259,11 @@ func LoadPluginsConfig(path string) (*PluginsConfig, error) {
 	}
 
 	// 按 Priority 升序排序
-	sort.Slice(loaded.Plugins, func(i, j int) bool {
-		return loaded.Plugins[i].Priority < loaded.Plugins[j].Priority
-	})
+	slices.SortFunc(
+		loaded.Plugins, func(a, b PluginMeta) int {
+			return cmp.Compare(a.Priority, b.Priority)
+		},
+	)
 
 	if modified {
 		if err := SavePluginsConfig(path, &loaded); err != nil {

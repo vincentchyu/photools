@@ -784,6 +784,15 @@ public final class WorkspaceStore: ObservableObject {
         guard !isGeodataLoading else { return }
         isGeodataLoading = true
 
+        if engine.isLoaded {
+            let packs = engine.listGeodataPacks()
+            if !packs.isEmpty {
+                self.continentPacks = packs
+                self.isGeodataLoading = false
+                return
+            }
+        }
+
         let client = processClient
         let cmd = PhotoolsCommand.geodataList(executablePath: photoolsExecutablePath)
         let collector = StringCollector()

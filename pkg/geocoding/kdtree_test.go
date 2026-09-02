@@ -65,7 +65,7 @@ func TestKDTree_FuzzAgainstBruteForce(t *testing.T) {
 	// 生成随机 500 个全球点
 	r := rand.New(rand.NewSource(42))
 	var pts []GeoPoint
-	for i := 0; i < 500; i++ {
+	for range 500 {
 		lat := (r.Float64() * 180.0) - 90.0
 		lon := (r.Float64() * 360.0) - 180.0
 		pts = append(pts, GeoPoint{
@@ -78,7 +78,7 @@ func TestKDTree_FuzzAgainstBruteForce(t *testing.T) {
 	tree := NewKDTree(pts)
 
 	// 测试 100 个随机查询点，KD-Tree 的最近距离必须与暴力搜索一致（允许浮点微小误差）
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		qLat := (r.Float64() * 180.0) - 90.0
 		qLon := (r.Float64() * 360.0) - 180.0
 
@@ -94,7 +94,7 @@ func TestKDTree_FuzzAgainstBruteForce(t *testing.T) {
 func BenchmarkKDTree_Lookup(b *testing.B) {
 	tree := NewKDTree(embeddedAsiaPoints)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		tree.Nearest(31.2304, 121.4737)
 	}
 }

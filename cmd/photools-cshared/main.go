@@ -94,54 +94,60 @@ type PipelineOptionsJSON struct {
 
 //export Photools_Init
 func Photools_Init(cb C.Photools_InitCallback) {
-	initOnce.Do(func() {
-		// 启动并发初始化四大能力插件与离线地理空间索引
-		runner := exiftool.DefaultRunner()
-		caps := []domain.Capability{
-			gpxmatch.NewCapability(gpxmatch.Config{Runner: runner}),
-			gpsinterpolate.NewCapability(gpsinterpolate.Config{Runner: runner}),
-			reversegeocode.NewCapability(reversegeocode.Config{Runner: runner}),
-			datearchive.NewCapability(datearchive.Config{Runner: runner}),
-		}
+	initOnce.Do(
+		func() {
+			// 启动并发初始化四大能力插件与离线地理空间索引
+			runner := exiftool.DefaultRunner()
+			caps := []domain.Capability{
+				gpxmatch.NewCapability(gpxmatch.Config{Runner: runner}),
+				gpsinterpolate.NewCapability(gpsinterpolate.Config{Runner: runner}),
+				reversegeocode.NewCapability(reversegeocode.Config{Runner: runner}),
+				datearchive.NewCapability(datearchive.Config{Runner: runner}),
+			}
 
-		var wg sync.WaitGroup
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
+			var wg sync.WaitGroup
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
 
-		for _, capItem := range caps {
-			wg.Add(1)
-			go func(c domain.Capability) {
-				defer wg.Done()
-				_ = c.Init(ctx, func(rep domain.PluginInitReport) {
-					if cb != nil {
-						cPluginID := C.CString(string(rep.PluginID))
-						cName := C.CString(rep.Name)
-						cStage := C.CString(rep.Stage)
-						cMsg := C.CString(rep.Message)
-						cStatus := C.CString(string(rep.Status))
-						var cErr *C.char
-						if rep.Err != nil {
-							cErr = C.CString(rep.Err.Error())
-						} else {
-							cErr = C.CString("")
-						}
+			for _, capItem := range caps {
+				wg.Go(
+					func() {
+						_ = capItem.Init(
+							ctx, func(rep domain.PluginInitReport) {
+								if cb != nil {
+									cPluginID := C.CString(string(rep.PluginID))
+									cName := C.CString(rep.Name)
+									cStage := C.CString(rep.Stage)
+									cMsg := C.CString(rep.Message)
+									cStatus := C.CString(string(rep.Status))
+									var cErr *C.char
+									if rep.Err != nil {
+										cErr = C.CString(rep.Err.Error())
+									} else {
+										cErr = C.CString("")
+									}
 
-						C.bridge_init_cb(cb, cPluginID, cName, cStage, cMsg, C.double(rep.Percent), cStatus, cErr)
+									C.bridge_init_cb(
+										cb, cPluginID, cName, cStage, cMsg, C.double(rep.Percent), cStatus, cErr,
+									)
 
-						C.free(unsafe.Pointer(cPluginID))
-						C.free(unsafe.Pointer(cName))
-						C.free(unsafe.Pointer(cStage))
-						C.free(unsafe.Pointer(cMsg))
-						C.free(unsafe.Pointer(cStatus))
-						C.free(unsafe.Pointer(cErr))
-					}
-				})
-			}(capItem)
-		}
+									C.free(unsafe.Pointer(cPluginID))
+									C.free(unsafe.Pointer(cName))
+									C.free(unsafe.Pointer(cStage))
+									C.free(unsafe.Pointer(cMsg))
+									C.free(unsafe.Pointer(cStatus))
+									C.free(unsafe.Pointer(cErr))
+								}
+							},
+						)
+					},
+				)
+			}
 
-		wg.Wait()
-		isInitialized = true
-	})
+			wg.Wait()
+			isInitialized = true
+		},
+	)
 }
 
 //export Photools_RunPipeline
@@ -184,9 +190,11 @@ func Photools_RunPipeline(optionsJSON *C.char, eventCB C.Photools_EventCallback,
 		}
 		var compExts []string
 		if opts.CompanionExtensions != "" {
-			fields := strings.FieldsFunc(opts.CompanionExtensions, func(r rune) bool {
-				return r == ',' || r == ' ' || r == ';'
-			})
+			fields := strings.FieldsFunc(
+				opts.CompanionExtensions, func(r rune) bool {
+					return r == ',' || r == ' ' || r == ';'
+				},
+			)
 			for _, p := range fields {
 				c := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(p)), ".")
 				if c != "" {
@@ -198,29 +206,31 @@ func Photools_RunPipeline(optionsJSON *C.char, eventCB C.Photools_EventCallback,
 		pluginsCfg, _ := config.LoadPluginsConfig("")
 		sessionCfg := config.NewSessionConfig(pluginsCfg, opts.BaseDir)
 
-		task, err := pipeline.Build(pipeline.PipelineOptions{
-			BaseDir:             opts.BaseDir,
-			SourceDir:           opts.SourceDir,
-			GPXDir:              opts.GPXDir,
-			ProcessedDir:        opts.ProcessedDir,
-			FlatMode:            opts.FlatMode,
-			SidecarPolicy:       policy,
-			SidecarOnly:         policy == string(domain.PolicySidecarOnly),
-			CompanionExtensions: compExts,
-			InPlaceArchive:      opts.InPlace,
-			Geosync:             opts.Geosync,
-			RawExtensions:       sessionCfg.Global.RawExtensions,
-			Workers:             opts.Workers,
-			EnableGPXMatch:      opts.EnableGPXMatch,
-			EnableInterpolate:   opts.EnableInterpolate,
-			InterpolateWindow:   win,
-			EnableGeocode:       opts.EnableGeocode,
-			AllowNoGPS:          opts.AllowNoGPS,
-			EnableArchive:       opts.EnableArchive,
-			EnableBackup:        opts.TestBackup,
-			BackupDir:           opts.BackupDir,
-			Session:             sessionCfg,
-		})
+		task, err := pipeline.Build(
+			pipeline.PipelineOptions{
+				BaseDir:             opts.BaseDir,
+				SourceDir:           opts.SourceDir,
+				GPXDir:              opts.GPXDir,
+				ProcessedDir:        opts.ProcessedDir,
+				FlatMode:            opts.FlatMode,
+				SidecarPolicy:       policy,
+				SidecarOnly:         policy == string(domain.PolicySidecarOnly),
+				CompanionExtensions: compExts,
+				InPlaceArchive:      opts.InPlace,
+				Geosync:             opts.Geosync,
+				RawExtensions:       sessionCfg.Global.RawExtensions,
+				Workers:             opts.Workers,
+				EnableGPXMatch:      opts.EnableGPXMatch,
+				EnableInterpolate:   opts.EnableInterpolate,
+				InterpolateWindow:   win,
+				EnableGeocode:       opts.EnableGeocode,
+				AllowNoGPS:          opts.AllowNoGPS,
+				EnableArchive:       opts.EnableArchive,
+				EnableBackup:        opts.TestBackup,
+				BackupDir:           opts.BackupDir,
+				Session:             sessionCfg,
+			},
+		)
 
 		if err != nil {
 			if doneCB != nil {
@@ -245,7 +255,9 @@ func Photools_RunPipeline(optionsJSON *C.char, eventCB C.Photools_EventCallback,
 						cAsset = C.CString("")
 					}
 
-					C.bridge_event_cb(eventCB, cStage, cLevel, cMsg, cAsset, C.int(evt.CurrentIndex), C.int(evt.TotalItems))
+					C.bridge_event_cb(
+						eventCB, cStage, cLevel, cMsg, cAsset, C.int(evt.CurrentIndex), C.int(evt.TotalItems),
+					)
 
 					C.free(unsafe.Pointer(cStage))
 					C.free(unsafe.Pointer(cLevel))
@@ -295,7 +307,9 @@ func Photools_LookupCoordinates(lat, lon, alt C.double, debug C.int) *C.char {
 			return C.CString("{}")
 		}
 
-		debugReport := geocoding.FormatDebugReport(float64(lat), float64(lon), float64(alt), loc, bestPt, distKm, debugStats, loadStats, queryDur)
+		debugReport := geocoding.FormatDebugReport(
+			float64(lat), float64(lon), float64(alt), loc, bestPt, distKm, debugStats, loadStats, queryDur,
+		)
 
 		var candidates []map[string]any
 		for i, c := range debugStats.TopCandidates {
@@ -321,19 +335,21 @@ func Photools_LookupCoordinates(lat, lon, alt C.double, debug C.int) *C.char {
 				ele = pt.Elevation
 			}
 
-			candidates = append(candidates, map[string]any{
-				"rank":               i + 1,
-				"name":               pt.Name,
-				"name_zh":            name,
-				"lat":                pt.Lat,
-				"lon":                pt.Lon,
-				"distance_km":        c.DistanceKm,
-				"elevation":          ele,
-				"geoname_id":         pt.GeoNameID,
-				"source":             pt.Source,
-				"feature_desc":       featureDesc,
-				"location_hierarchy": hierarchy,
-			})
+			candidates = append(
+				candidates, map[string]any{
+					"rank":               i + 1,
+					"name":               pt.Name,
+					"name_zh":            name,
+					"lat":                pt.Lat,
+					"lon":                pt.Lon,
+					"distance_km":        c.DistanceKm,
+					"elevation":          ele,
+					"geoname_id":         pt.GeoNameID,
+					"source":             pt.Source,
+					"feature_desc":       featureDesc,
+					"location_hierarchy": hierarchy,
+				},
+			)
 		}
 
 		res := map[string]any{
@@ -563,9 +579,11 @@ func Photools_SavePreferences(optionsJSON *C.char) C.int {
 		sessionCfg.Global.SidecarPolicy = string(domain.NormalizePolicy(opts.SidecarPolicy))
 	}
 	if opts.CompanionExtensions != "" {
-		fields := strings.FieldsFunc(opts.CompanionExtensions, func(r rune) bool {
-			return r == ',' || r == ' ' || r == ';'
-		})
+		fields := strings.FieldsFunc(
+			opts.CompanionExtensions, func(r rune) bool {
+				return r == ',' || r == ' ' || r == ';'
+			},
+		)
 		var compExts []string
 		for _, p := range fields {
 			c := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(p)), ".")
@@ -578,9 +596,11 @@ func Photools_SavePreferences(optionsJSON *C.char) C.int {
 		}
 	}
 	if opts.RawExtensions != "" {
-		fields := strings.FieldsFunc(opts.RawExtensions, func(r rune) bool {
-			return r == ',' || r == ' ' || r == ';'
-		})
+		fields := strings.FieldsFunc(
+			opts.RawExtensions, func(r rune) bool {
+				return r == ',' || r == ' ' || r == ';'
+			},
+		)
 		var rawExts []string
 		for _, p := range fields {
 			c := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(p)), ".")
@@ -639,14 +659,14 @@ func init() {
 }
 
 type pluginMetaExport struct {
-	ID       string                 `json:"id"`
-	Name     string                 `json:"name"`
-	Desc     string                 `json:"desc"`
-	NameKey  string                 `json:"name_key"`
-	DescKey  string                 `json:"desc_key"`
-	Priority int                    `json:"priority"`
-	Enabled  bool                   `json:"enabled"`
-	Options  map[string]interface{} `json:"options,omitempty"`
+	ID       string         `json:"id"`
+	Name     string         `json:"name"`
+	Desc     string         `json:"desc"`
+	NameKey  string         `json:"name_key"`
+	DescKey  string         `json:"desc_key"`
+	Priority int            `json:"priority"`
+	Enabled  bool           `json:"enabled"`
+	Options  map[string]any `json:"options,omitempty"`
 }
 
 //export Photools_GetPluginMetasJSON
@@ -658,16 +678,18 @@ func Photools_GetPluginMetasJSON() *C.char {
 	}
 	exports := make([]pluginMetaExport, 0, len(cfg.Plugins))
 	for _, p := range cfg.Plugins {
-		exports = append(exports, pluginMetaExport{
-			ID:       string(p.ID),
-			Name:     p.Title(),
-			Desc:     p.Desc(),
-			NameKey:  p.NameKey,
-			DescKey:  p.DescKey,
-			Priority: p.Priority,
-			Enabled:  p.Enabled,
-			Options:  p.Options,
-		})
+		exports = append(
+			exports, pluginMetaExport{
+				ID:       string(p.ID),
+				Name:     p.Title(),
+				Desc:     p.Desc(),
+				NameKey:  p.NameKey,
+				DescKey:  p.DescKey,
+				Priority: p.Priority,
+				Enabled:  p.Enabled,
+				Options:  p.Options,
+			},
+		)
 	}
 	data, err := json.Marshal(exports)
 	if err != nil {

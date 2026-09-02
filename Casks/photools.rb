@@ -1,6 +1,6 @@
 cask "photools" do
   version "0.1.0"
-  sha256 "98b33919d52201b7f2709de9ddc3a6d795b024a59da90f8a023e1c071467146f"
+  sha256 "966be8c742ead28d155b92ca70462ba11c8f980c641d5da827374b161be90263"
 
   url "https://github.com/vincentchyu/photools/releases/download/v0.1.0/photools-macOS.dmg"
   name "photools"

@@ -72,19 +72,19 @@ func TestI18n_FallbackAndMissingKey(t *testing.T) {
 
 func TestI18n_Concurrency(t *testing.T) {
 	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			if idx%2 == 0 {
-				SetLanguage("zh-CN")
-			} else {
-				SetLanguage("en-US")
-			}
-			_ = T("appTitle")
-			_ = IsChinese()
-			_ = GetLanguage()
-		}(i)
+	for i := range 50 {
+		wg.Go(
+			func() {
+				if i%2 == 0 {
+					SetLanguage("zh-CN")
+				} else {
+					SetLanguage("en-US")
+				}
+				_ = T("appTitle")
+				_ = IsChinese()
+				_ = GetLanguage()
+			},
+		)
 	}
 	wg.Wait()
 	SetLanguage("zh-CN")

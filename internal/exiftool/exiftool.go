@@ -2,6 +2,7 @@ package exiftool
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,7 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -81,10 +82,7 @@ func ReadBatchMetadataMapConcurrent(
 
 	var chunks []batchChunk
 	for i := 0; i < len(paths); i += batchSize {
-		end := i + batchSize
-		if end > len(paths) {
-			end = len(paths)
-		}
+		end := min(i+batchSize, len(paths))
 		chunks = append(chunks, batchChunk{chunk: paths[i:end]})
 	}
 
@@ -100,52 +98,46 @@ func ReadBatchMetadataMapConcurrent(
 	}
 	close(chunkChan)
 
-	actualWorkers := concurrency
-	if actualWorkers > len(chunks) {
-		actualWorkers = len(chunks)
-	}
+	actualWorkers := min(concurrency, len(chunks))
 
-	for w := 0; w < actualWorkers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for item := range chunkChan {
-				args := []string{
-					"-m", "-q", "-json", "-DateTimeOriginal", "-OffsetTimeOriginal", "-GPSPosition", "-GPSDateTime",
-				}
-				args = append(args, item.chunk...)
+	for range actualWorkers {
+		wg.Go(
+			func() {
+				for item := range chunkChan {
+					args := []string{
+						"-m", "-q", "-json", "-DateTimeOriginal", "-OffsetTimeOriginal", "-GPSPosition", "-GPSDateTime",
+					}
+					args = append(args, item.chunk...)
 
-				output, _ := runner.CombinedOutput("exiftool", args...)
-				if len(output) > 0 {
-					records, parseErr := ParseBatchMetadataJSON(output)
-					if parseErr == nil && len(records) > 0 {
-						mu.Lock()
-						for idx, rec := range records {
-							filePath := rec.SourceFile
-							if filePath == "" && idx < len(item.chunk) {
-								filePath = item.chunk[idx]
-							}
-							if filePath != "" {
-								cleanPath := filepath.Clean(filePath)
-								result[cleanPath] = rec
-								if abs, err := filepath.Abs(filePath); err == nil {
-									result[abs] = rec
+					output, _ := runner.CombinedOutput("exiftool", args...)
+					if len(output) > 0 {
+						records, parseErr := ParseBatchMetadataJSON(output)
+						if parseErr == nil && len(records) > 0 {
+							mu.Lock()
+							for idx, rec := range records {
+								filePath := rec.SourceFile
+								if filePath == "" && idx < len(item.chunk) {
+									filePath = item.chunk[idx]
+								}
+								if filePath != "" {
+									cleanPath := filepath.Clean(filePath)
+									result[cleanPath] = rec
+									if abs, err := filepath.Abs(filePath); err == nil {
+										result[abs] = rec
+									}
 								}
 							}
+							mu.Unlock()
 						}
-						mu.Unlock()
 					}
-				}
 
-				done := int(processedCount.Add(int64(len(item.chunk))))
-				if onProgress != nil {
-					if done > total {
-						done = total
+					done := min(int(processedCount.Add(int64(len(item.chunk)))), total)
+					if onProgress != nil {
+						onProgress(done, total)
 					}
-					onProgress(done, total)
 				}
-			}
-		}()
+			},
+		)
 	}
 
 	wg.Wait()
@@ -237,7 +229,9 @@ func WriteGeotag(runner CommandRunner, rawPath string, gpxFiles []string, geosyn
 }
 
 // WriteGeotagToXMP 🌟 匹配 GPX 轨迹并直接写入/生成 XMP 侧车文件 (Sidecar-Only 模式专用，不触碰原图)
-func WriteGeotagToXMP(runner CommandRunner, sourceMedia, xmpPath string, gpxFiles []string, geosync string) ([]byte, error) {
+func WriteGeotagToXMP(runner CommandRunner, sourceMedia, xmpPath string, gpxFiles []string, geosync string) (
+	[]byte, error,
+) {
 	args := []string{
 		"-overwrite_original",
 		"-P",
@@ -364,7 +358,8 @@ func BuildProvenanceArgs(prov domain.GPSProvenance) []string {
 	if prov.Source != "" {
 		args = append(args, fmt.Sprintf("-XMP-photools:GPSSource=%s", prov.Source))
 	}
-	args = append(args,
+	args = append(
+		args,
 		fmt.Sprintf("-XMP-photools:Processor=%s", processor),
 		fmt.Sprintf("-XMP-photools:ProcessedDate=%s", ts),
 		fmt.Sprintf("-XMP-xmp:CreatorTool=%s", processor),
@@ -380,7 +375,9 @@ func BuildProvenanceArgs(prov domain.GPSProvenance) []string {
 }
 
 // WriteCoordinatesToXMPWithProvenance 向 XMP 侧车写入 GPS 坐标并追加 Photools 溯源指纹
-func WriteCoordinatesToXMPWithProvenance(runner CommandRunner, xmpPath string, lat, lon, alt float64, prov domain.GPSProvenance) error {
+func WriteCoordinatesToXMPWithProvenance(
+	runner CommandRunner, xmpPath string, lat, lon, alt float64, prov domain.GPSProvenance,
+) error {
 	latRef := "N"
 	absLat := lat
 	if lat < 0 {
@@ -859,8 +856,8 @@ func InspectPhotoMetadata(runner CommandRunner, path string) (*DetailedPhotoMeta
 		for _, k := range keys {
 			for dk, dv := range targetDict {
 				tagPart := dk
-				if idx := strings.Index(dk, ":"); idx >= 0 {
-					tagPart = dk[idx+1:]
+				if _, after, found := strings.Cut(dk, ":"); found {
+					tagPart = after
 				}
 				if strings.EqualFold(dk, k) || strings.EqualFold(tagPart, k) {
 					s := fmt.Sprintf("%v", dv)
@@ -885,8 +882,8 @@ func InspectPhotoMetadata(runner CommandRunner, path string) (*DetailedPhotoMeta
 		for _, k := range keys {
 			for dk, dv := range targetDict {
 				tagPart := dk
-				if idx := strings.Index(dk, ":"); idx >= 0 {
-					tagPart = dk[idx+1:]
+				if _, after, found := strings.Cut(dk, ":"); found {
+					tagPart = after
 				}
 				if strings.EqualFold(dk, k) || strings.EqualFold(tagPart, k) {
 					switch v := dv.(type) {
@@ -907,7 +904,9 @@ func InspectPhotoMetadata(runner CommandRunner, path string) (*DetailedPhotoMeta
 						s = strings.TrimSuffix(s, " Below Sea Level")
 						s = strings.TrimSuffix(s, " m")
 						s = strings.TrimSpace(s)
-						isNeg := strings.HasSuffix(strings.ToUpper(s), "S") || strings.HasSuffix(strings.ToUpper(s), "W")
+						isNeg := strings.HasSuffix(strings.ToUpper(s), "S") || strings.HasSuffix(
+							strings.ToUpper(s), "W",
+						)
 						s = strings.TrimSuffix(s, " N")
 						s = strings.TrimSuffix(s, " S")
 						s = strings.TrimSuffix(s, " E")
@@ -932,7 +931,10 @@ func InspectPhotoMetadata(runner CommandRunner, path string) (*DetailedPhotoMeta
 
 	makeStr := strVal("EXIF:Make", "Make", "QuickTime:Make")
 	modelStr := strVal("EXIF:Model", "Model", "QuickTime:Model")
-	lensStr := strVal("EXIF:LensModel", "XMP:LensModel", "MakerNotes:Lens", "MakerNotes:LensType", "LensModel", "Composite:LensSpec", "Composite:LensID", "Lens")
+	lensStr := strVal(
+		"EXIF:LensModel", "XMP:LensModel", "MakerNotes:Lens", "MakerNotes:LensType", "LensModel", "Composite:LensSpec",
+		"Composite:LensID", "Lens",
+	)
 	dateStr := strVal("EXIF:DateTimeOriginal", "XMP:DateTimeOriginal", "QuickTime:CreateDate", "DateTimeOriginal")
 	expStr := strVal("EXIF:ExposureTime", "Composite:ShutterSpeed", "ExposureTime", "ShutterSpeed")
 	fnStr := strVal("EXIF:FNumber", "Composite:Aperture", "FNumber", "ApertureValue", "Aperture")
@@ -1014,7 +1016,9 @@ func InspectPhotoMetadata(runner CommandRunner, path string) (*DetailedPhotoMeta
 	if processor == "" {
 		processor = strVal("XMP-photools:Processor", "Processor", "XMP:CreatorTool", "CreatorTool")
 	}
-	processedDate := strValFrom(dictXMP, "XMP-photools:ProcessedDate", "ProcessedDate", "XMP:MetadataDate", "MetadataDate")
+	processedDate := strValFrom(
+		dictXMP, "XMP-photools:ProcessedDate", "ProcessedDate", "XMP:MetadataDate", "MetadataDate",
+	)
 	if processedDate == "" {
 		processedDate = strVal("XMP-photools:ProcessedDate", "ProcessedDate", "XMP:MetadataDate", "MetadataDate")
 	}
@@ -1039,11 +1043,13 @@ func InspectPhotoMetadata(runner CommandRunner, path string) (*DetailedPhotoMeta
 		}
 		tagKey := group + ":" + tag
 		seenTags[tagKey] = true
-		rawTags = append(rawTags, ExifTagItem{
-			Group: group,
-			Tag:   tag,
-			Value: fmt.Sprintf("%v", v),
-		})
+		rawTags = append(
+			rawTags, ExifTagItem{
+				Group: group,
+				Tag:   tag,
+				Value: fmt.Sprintf("%v", v),
+			},
+		)
 	}
 
 	// 联合装入配套 XMP 侧车文件中的所有标签
@@ -1062,21 +1068,25 @@ func InspectPhotoMetadata(runner CommandRunner, path string) (*DetailedPhotoMeta
 			tagKey := group + ":" + tag
 			if !seenTags[tagKey] {
 				seenTags[tagKey] = true
-				rawTags = append(rawTags, ExifTagItem{
-					Group: group,
-					Tag:   tag,
-					Value: fmt.Sprintf("%v", v),
-				})
+				rawTags = append(
+					rawTags, ExifTagItem{
+						Group: group,
+						Tag:   tag,
+						Value: fmt.Sprintf("%v", v),
+					},
+				)
 			}
 		}
 	}
 
-	sort.Slice(rawTags, func(i, j int) bool {
-		if rawTags[i].Group == rawTags[j].Group {
-			return rawTags[i].Tag < rawTags[j].Tag
-		}
-		return rawTags[i].Group < rawTags[j].Group
-	})
+	slices.SortFunc(
+		rawTags, func(a, b ExifTagItem) int {
+			if c := cmp.Compare(a.Group, b.Group); c != 0 {
+				return c
+			}
+			return cmp.Compare(a.Tag, b.Tag)
+		},
+	)
 
 	return &DetailedPhotoMetadata{
 		FilePath:          path,

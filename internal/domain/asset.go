@@ -2,7 +2,7 @@ package domain
 
 import (
 	"path/filepath"
-	"sort"
+	"slices"
 )
 
 // AssetGroup 代表同 basename 的一组媒体资产及其附属文件（拍摄单元）
@@ -56,9 +56,8 @@ func (a AssetGroup) IsPaired() bool {
 
 // SortedCompanions 返回排序后的附加文件列表
 func (a AssetGroup) SortedCompanions() []string {
-	cp := make([]string, len(a.CompanionPaths))
-	copy(cp, a.CompanionPaths)
-	sort.Strings(cp)
+	cp := slices.Clone(a.CompanionPaths)
+	slices.Sort(cp)
 	return cp
 }
 

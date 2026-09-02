@@ -1,10 +1,11 @@
 package engine
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/vincentchyu/photools/internal/domain"
@@ -163,17 +164,17 @@ func (d *Discoverer) Discover(sourceDir string) ([]domain.AssetGroup, error) {
 		assets = append(assets, *group)
 	}
 
-	sort.Slice(
-		assets, func(i, j int) bool {
-			if assets[i].Dir != assets[j].Dir {
-				return assets[i].Dir < assets[j].Dir
+	slices.SortFunc(
+		assets, func(a, b domain.AssetGroup) int {
+			if a.Dir != b.Dir {
+				return cmp.Compare(a.Dir, b.Dir)
 			}
-			return assets[i].BaseName < assets[j].BaseName
+			return cmp.Compare(a.BaseName, b.BaseName)
 		},
 	)
 
 	for i := range assets {
-		sort.Strings(assets[i].CompanionPaths)
+		slices.Sort(assets[i].CompanionPaths)
 	}
 
 	return assets, nil
@@ -241,6 +242,6 @@ func ListGPXFiles(gpxDir string) ([]string, error) {
 		}
 	}
 
-	sort.Strings(gpxFiles)
+	slices.Sort(gpxFiles)
 	return gpxFiles, nil
 }

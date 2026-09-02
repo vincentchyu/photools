@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -315,9 +316,9 @@ func (c *Capability) buildAnchorIndex(batch []*domain.AssetContext, sendEvent fu
 	}
 
 	// 按拍摄时间升序排序
-	sort.Slice(
-		idx.allAnchors, func(i, j int) bool {
-			return idx.allAnchors[i].Time.Before(idx.allAnchors[j].Time)
+	slices.SortFunc(
+		idx.allAnchors, func(a, b GPSAnchor) int {
+			return a.Time.Compare(b.Time)
 		},
 	)
 

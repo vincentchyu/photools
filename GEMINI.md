@@ -167,4 +167,19 @@
    - 默认模式符合核心摄影师用户画像（`zh-CN` 优先），支持 CLI `--lang [zh|en]`、TUI 快捷键 `[l]`、macOS 设置面板无缝热切换；
    - 强制运行 `internal/i18n/i18n_guard_test.go` 验证中英文字典 100% 镜像对称与纯英文模式下零中文字符泄漏。
 
+---
+
+## 10. 本地开发环境与 Go 工具链执行规约 (asdf & Go Runtime Protocol)
+
+1. **Golang 版本管理体系 (asdf)**：
+    - 使用者的 Go 环境通过 `asdf` 进行多版本管理；
+    - 当前项目活跃使用的 Go 版本为 `1.27.1`（二进制路径：`/Users/vincent/.asdf/installs/golang/1.27.1/go/bin/go`）；
+    - 可用版本池包括：`1.24.3`、`1.25.1`、`1.26.2`、`1.27.1`；
+2. **沙盒与终端命令执行要求**：
+    - 默认沙盒环境下直接调用系统 PATH 中的 `go` 可能会因沙盒文件访问隔离提示无权限（`Operation not permitted`）；
+    - AI Agent 在执行 `go test`、`go build`、`go mod` 等 Go 相关命令时，知晓宿主机的真实 Go 二进制位于
+      `/Users/vincent/.asdf/installs/golang/1.27.1/go/bin/go`，并在需要外部 Go 工具链时显式请求沙盒穿透（
+      `BypassSandbox: true`）或使用绝对路径。
+
+
 

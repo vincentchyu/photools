@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
 	"github.com/vincentchyu/photools/internal/capabilities/datearchive"
 	"github.com/vincentchyu/photools/internal/capabilities/gpsinterpolate"
 	"github.com/vincentchyu/photools/internal/capabilities/gpxmatch"
@@ -935,17 +936,17 @@ func (m Model) startPluginsInitCmd() tea.Cmd {
 			defer cancel()
 
 			for _, capItem := range caps {
-				wg.Add(1)
-				go func(c domain.Capability) {
-					defer wg.Done()
-					_ = c.Init(
-						ctx, func(report domain.PluginInitReport) {
-							if ch != nil {
-								ch <- report
-							}
-						},
-					)
-				}(capItem)
+				wg.Go(
+					func() {
+						_ = capItem.Init(
+							ctx, func(report domain.PluginInitReport) {
+								if ch != nil {
+									ch <- report
+								}
+							},
+						)
+					},
+				)
 			}
 
 			wg.Wait()

@@ -39,35 +39,32 @@ func (p *WorkerPool[T, R]) Execute(
 		return nil
 	}
 
-	actualWorkers := p.concurrency
-	if actualWorkers > len(items) {
-		actualWorkers = len(items)
-	}
+	actualWorkers := min(p.concurrency, len(items))
 
 	jobs := make(chan poolJob[T])
 	results := make(chan poolResult[R], len(items))
 	var wg sync.WaitGroup
 
-	for i := 0; i < actualWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case job, ok := <-jobs:
-					if !ok {
+	for range actualWorkers {
+		wg.Go(
+			func() {
+				for {
+					select {
+					case <-ctx.Done():
 						return
-					}
-					res := workerFn(ctx, job.data)
-					results <- poolResult[R]{
-						index: job.index,
-						data:  res,
+					case job, ok := <-jobs:
+						if !ok {
+							return
+						}
+						res := workerFn(ctx, job.data)
+						results <- poolResult[R]{
+							index: job.index,
+							data:  res,
+						}
 					}
 				}
-			}
-		}()
+			},
+		)
 	}
 
 	go func() {

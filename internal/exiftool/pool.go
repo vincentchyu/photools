@@ -290,13 +290,7 @@ func NewStayOpenPool(cfg StayOpenConfig) (*StayOpenPool, error) {
 		cfg.ExifToolPath = LocateExifTool()
 	}
 	if cfg.MaxWorkers <= 0 {
-		cpus := runtime.NumCPU()
-		if cpus < 2 {
-			cpus = 2
-		} else if cpus > 16 {
-			cpus = 16
-		}
-		cfg.MaxWorkers = cpus
+		cfg.MaxWorkers = max(2, min(16, runtime.NumCPU()))
 	}
 	if cfg.CommandTimeout <= 0 {
 		cfg.CommandTimeout = 30 * time.Second
@@ -460,11 +454,11 @@ func (p *StayOpenPool) Close() error {
 	// 并发优雅关闭所有 worker
 	var wg sync.WaitGroup
 	for _, w := range targets {
-		wg.Add(1)
-		go func(worker *StayOpenWorker) {
-			defer wg.Done()
-			_ = worker.Close()
-		}(w)
+		wg.Go(
+			func() {
+				_ = w.Close()
+			},
+		)
 	}
 	wg.Wait()
 	return nil
@@ -548,9 +542,11 @@ func DefaultRunner() CommandRunner {
 	}
 
 	// 首次初始化前主动清理残留的孤儿进程
-	defaultPoolOnce.Do(func() {
-		KillOrphanExifTools()
-	})
+	defaultPoolOnce.Do(
+		func() {
+			KillOrphanExifTools()
+		},
+	)
 
 	runner, err := NewPoolRunner(StayOpenConfig{})
 	if err == nil {

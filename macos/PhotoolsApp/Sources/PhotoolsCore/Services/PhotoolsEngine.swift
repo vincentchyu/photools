@@ -334,31 +334,7 @@ public final class PhotoolsEngine: @unchecked Sendable {
         defer { fnFreeString?(cStr) }
 
         let jsonString = String(cString: cStr)
-        guard let data = jsonString.data(using: .utf8),
-              let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            return []
-        }
-
-        var results: [GeodataContinentPack] = []
-        for item in array {
-            if let code = item["code"] as? String {
-                let name = item["name"] as? String ?? code
-                let desc = item["description"] as? String ?? ""
-                let isInstalled = item["is_installed"] as? Bool ?? false
-                let ptCount = item["point_count"] as? Int ?? 0
-                let sizeMB = item["size_mb"] as? Double ?? 0.0
-
-                results.append(GeodataContinentPack(
-                    code: code,
-                    nameZH: name,
-                    description: desc,
-                    isInstalled: isInstalled,
-                    pointCount: ptCount,
-                    sizeMB: sizeMB
-                ))
-            }
-        }
-        return results
+        return GeodataParser.parseListJSON(jsonString)
     }
 
     // 4. 执行流水线

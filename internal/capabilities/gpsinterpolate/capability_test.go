@@ -285,7 +285,7 @@ func TestGPSInterpolate_LargeBatchDateIndexedBinarySearch(t *testing.T) {
 
 	// 构造 2025-10-05 和 2025-10-06 两天共 100 张照片
 	// 其中 2025-10-05 只有 10:00 和 11:00 有 GPS，中间的照片待插值
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		p := filepath.Join(tempDir, fmt.Sprintf("DSC_1005_%02d.NEF", i))
 		_ = os.WriteFile(p, []byte("raw"), 0o644)
 		actx := domain.NewAssetContext(domain.AssetGroup{BaseName: fmt.Sprintf("DSC_1005_%02d", i), RawPath: p})
@@ -356,7 +356,7 @@ func BenchmarkAnchorIndex_Build(b *testing.B) {
 	var batch []*domain.AssetContext
 	baseTime := time.Date(2025, 10, 5, 8, 0, 0, 0, time.Local)
 
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		t := baseTime.Add(time.Duration(i) * 10 * time.Second)
 		actx := domain.NewAssetContext(domain.AssetGroup{BaseName: fmt.Sprintf("DSC_%04d", i), RawPath: fmt.Sprintf("/tmp/DSC_%04d.NEF", i)})
 		actx.UpdateMetadata(domain.Metadata{
@@ -372,7 +372,7 @@ func BenchmarkAnchorIndex_Build(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = capInst.buildAnchorIndex(batch, nil)
 	}
 }
@@ -385,7 +385,7 @@ func BenchmarkAnchorIndex_FindNearestAnchors(b *testing.B) {
 
 	baseTime := time.Date(2025, 10, 5, 8, 0, 0, 0, time.Local)
 	// 构造 10,000 个跨 10 天的锚点
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		t := baseTime.Add(time.Duration(i) * 30 * time.Second)
 		dKey := t.Format("2006-01-02")
 		anchor := GPSAnchor{
@@ -405,7 +405,7 @@ func BenchmarkAnchorIndex_FindNearestAnchors(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = idx.findNearestAnchors(queryTime, maxGap)
 	}
 }
@@ -415,7 +415,7 @@ func BenchmarkGPSInterpolate_ExecuteProcess(b *testing.B) {
 	var batch []*domain.AssetContext
 	baseTime := time.Date(2025, 10, 5, 8, 0, 0, 0, time.Local)
 
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		t := baseTime.Add(time.Duration(i) * 15 * time.Second)
 		actx := domain.NewAssetContext(domain.AssetGroup{BaseName: fmt.Sprintf("DSC_%04d", i), RawPath: fmt.Sprintf("/tmp/DSC_%04d.NEF", i)})
 		if i == 0 || i == 199 {
@@ -445,7 +445,7 @@ func BenchmarkGPSInterpolate_ExecuteProcess(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = capInst.ExecuteProcess(context.Background(), targetActx, nil)
 	}
 }

@@ -62,10 +62,10 @@ type SessionConfig struct {
 
 // PluginOpt 封装单个插件在会话中的专属配置项集合
 type PluginOpt struct {
-	ID       domain.CapabilityID    `json:"id"`
-	Priority int                    `json:"priority"`
-	Enabled  bool                   `json:"enabled"`
-	Options  map[string]interface{} `json:"options"`
+	ID       domain.CapabilityID `json:"id"`
+	Priority int                 `json:"priority"`
+	Enabled  bool                `json:"enabled"`
+	Options  map[string]any      `json:"options"`
 }
 
 // DefaultGPXDir 返回内置默认的全局 GPX 轨迹目录 (~/.config/gpx)
@@ -154,13 +154,11 @@ func NewSessionConfig(cfg *PluginsConfig, baseDir ...string) *SessionConfig {
 	}
 
 	for _, p := range cfg.Plugins {
-		optCopy := make(map[string]interface{})
-		maps.Copy(optCopy, p.Options)
 		sc.Plugins[p.ID] = PluginOpt{
 			ID:       p.ID,
 			Priority: p.Priority,
 			Enabled:  p.Enabled,
-			Options:  optCopy,
+			Options:  maps.Clone(p.Options),
 		}
 	}
 
@@ -207,7 +205,7 @@ func (s *SessionConfig) GetBoolOption(pluginID domain.CapabilityID, key string, 
 }
 
 // GetPluginOptions 获取指定插件的全部配置选项字典
-func (s *SessionConfig) GetPluginOptions(pluginID domain.CapabilityID) map[string]interface{} {
+func (s *SessionConfig) GetPluginOptions(pluginID domain.CapabilityID) map[string]any {
 	if p, ok := s.Plugins[pluginID]; ok && p.Options != nil {
 		return p.Options
 	}
@@ -215,17 +213,17 @@ func (s *SessionConfig) GetPluginOptions(pluginID domain.CapabilityID) map[strin
 }
 
 // SetPluginOption 设置指定插件的配置项（当前会话生效）
-func (s *SessionConfig) SetPluginOption(pluginID domain.CapabilityID, key string, value interface{}) {
+func (s *SessionConfig) SetPluginOption(pluginID domain.CapabilityID, key string, value any) {
 	p, ok := s.Plugins[pluginID]
 	if !ok {
 		p = PluginOpt{
 			ID:      pluginID,
 			Enabled: true,
-			Options: make(map[string]interface{}),
+			Options: make(map[string]any),
 		}
 	}
 	if p.Options == nil {
-		p.Options = make(map[string]interface{})
+		p.Options = make(map[string]any)
 	}
 	p.Options[key] = value
 	s.Plugins[pluginID] = p
@@ -237,7 +235,7 @@ func (s *SessionConfig) SetPluginEnabled(pluginID domain.CapabilityID, enabled b
 	if !ok {
 		p = PluginOpt{
 			ID:      pluginID,
-			Options: make(map[string]interface{}),
+			Options: make(map[string]any),
 		}
 	}
 	p.Enabled = enabled
@@ -264,7 +262,7 @@ func (s *SessionConfig) ApplyToPluginsConfig(cfg *PluginsConfig) {
 			p.Priority = opt.Priority
 			p.Enabled = opt.Enabled
 			if p.Options == nil {
-				p.Options = make(map[string]interface{})
+				p.Options = make(map[string]any)
 			}
 			for k, v := range opt.Options {
 				p.Options[k] = v
@@ -309,11 +307,14 @@ func GlobalOptionSpecs() []OptionSpec {
 			DefaultValue: false,
 		},
 		{
-			Key:          "sidecar_policy",
-			NameKey:      "optSidecarPolicyName",
-			DescKey:      "optSidecarPolicyDesc",
-			Type:         TypeChoice,
-			Choices:      []string{string(domain.PolicySmart), string(domain.PolicySidecarOnly), string(domain.PolicyEmbedAndSidecar), string(domain.PolicyEmbedOnly)},
+			Key:     "sidecar_policy",
+			NameKey: "optSidecarPolicyName",
+			DescKey: "optSidecarPolicyDesc",
+			Type:    TypeChoice,
+			Choices: []string{
+				string(domain.PolicySmart), string(domain.PolicySidecarOnly), string(domain.PolicyEmbedAndSidecar),
+				string(domain.PolicyEmbedOnly),
+			},
 			Scope:        ScopeGlobal,
 			DefaultValue: string(domain.PolicySmart),
 		},

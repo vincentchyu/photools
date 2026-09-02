@@ -199,6 +199,48 @@ public struct GeodataParser: Sendable {
         return packs
     }
 
+    public static func parseListJSON(_ jsonString: String) -> [GeodataContinentPack] {
+        guard let data = jsonString.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return []
+        }
+
+        var results: [GeodataContinentPack] = []
+        for item in array {
+            let meta = item["meta"] as? [String: Any]
+            guard let code = meta?["code"] as? String ?? item["code"] as? String else {
+                continue
+            }
+            let name = meta?["name_zh"] as? String ?? item["name"] as? String ?? item["name_zh"] as? String ?? code
+            let desc = meta?["description"] as? String ?? item["description"] as? String ?? ""
+            let isInstalled = item["installed"] as? Bool ?? item["is_installed"] as? Bool ?? false
+            let ptCount = item["points"] as? Int ?? item["point_count"] as? Int ?? meta?["approx_points"] as? Int ?? 0
+
+            var sizeMB: Double = 0.0
+            if let bytes = item["file_size"] as? Int64 {
+                sizeMB = Double(bytes) / (1024.0 * 1024.0)
+            } else if let bytes = item["file_size"] as? Int {
+                sizeMB = Double(bytes) / (1024.0 * 1024.0)
+            } else if let bytes = item["file_size"] as? Double {
+                sizeMB = bytes / (1024.0 * 1024.0)
+            } else if let mb = item["size_mb"] as? Double {
+                sizeMB = mb
+            }
+
+            results.append(
+                GeodataContinentPack(
+                    code: code,
+                    nameZH: name,
+                    description: desc,
+                    isInstalled: isInstalled,
+                    pointCount: ptCount,
+                    sizeMB: sizeMB
+                )
+            )
+        }
+        return results
+    }
+
     public static func parseLookupOutput(_ output: String) -> GeodataLookupResult? {
         guard output.contains("【逆地理编码匹配结果】") else {
             return nil

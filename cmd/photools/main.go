@@ -648,7 +648,7 @@ func applySessionOverrides(
 	workers int,
 	rawExts string,
 	companionExts string,
-	pluginOpts map[domain.CapabilityID]map[string]interface{},
+	pluginOpts map[domain.CapabilityID]map[string]any,
 ) {
 	sessionCfg.Global.BaseDir = baseDir
 	sessionCfg.Global.SourceDir = srcDir

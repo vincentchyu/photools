@@ -1,7 +1,9 @@
 package geocoding
 
 import (
+	"cmp"
 	"math"
+	"slices"
 	"sort"
 	"time"
 )
@@ -80,11 +82,11 @@ func buildKDTree(points []point3D, depth int) *kdNode {
 
 	switch axis {
 	case 0:
-		sort.Slice(points, func(i, j int) bool { return points[i].x < points[j].x })
+		slices.SortFunc(points, func(a, b point3D) int { return cmp.Compare(a.x, b.x) })
 	case 1:
-		sort.Slice(points, func(i, j int) bool { return points[i].y < points[j].y })
+		slices.SortFunc(points, func(a, b point3D) int { return cmp.Compare(a.y, b.y) })
 	default:
-		sort.Slice(points, func(i, j int) bool { return points[i].z < points[j].z })
+		slices.SortFunc(points, func(a, b point3D) int { return cmp.Compare(a.z, b.z) })
 	}
 
 	medianIdx := len(points) / 2
@@ -101,10 +103,7 @@ func buildKDTree(points []point3D, depth int) *kdNode {
 
 // chordSqToKm 将三维弦长欧氏距离平方转换为球面大圆物理距离 (km)
 func chordSqToKm(distSq float64) float64 {
-	chordLen := math.Sqrt(distSq)
-	if chordLen > 2.0 {
-		chordLen = 2.0
-	}
+	chordLen := min(math.Sqrt(distSq), 2.0)
 	centralAngle := 2.0 * math.Asin(chordLen/2.0)
 	return centralAngle * earthRadiusKm
 }

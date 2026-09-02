@@ -62,21 +62,21 @@ func TestStayOpenPoolConcurrent(t *testing.T) {
 	iterations := 5
 
 	for w := range workers {
-		wg.Add(1)
-		go func(workerID int) {
-			defer wg.Done()
-			for i := range iterations {
-				out, err := pool.Execute("-ver")
-				if err != nil {
-					t.Errorf("Worker %d 在第 %d 次请求出错: %v", workerID, i, err)
-					return
+		wg.Go(
+			func() {
+				for i := range iterations {
+					out, err := pool.Execute("-ver")
+					if err != nil {
+						t.Errorf("Worker %d 在第 %d 次请求出错: %v", w, i, err)
+						return
+					}
+					if len(strings.TrimSpace(string(out))) == 0 {
+						t.Errorf("Worker %d 在第 %d 次请求返回空输出", w, i)
+						return
+					}
 				}
-				if len(strings.TrimSpace(string(out))) == 0 {
-					t.Errorf("Worker %d 在第 %d 次请求返回空输出", workerID, i)
-					return
-				}
-			}
-		}(w)
+			},
+		)
 	}
 
 	wg.Wait()

@@ -15,13 +15,18 @@ public struct RepositoryLocator: Sendable {
     }
 
     public func photoolsExecutablePath(repoRoot: String) -> String {
-        let localBinary = URL(fileURLWithPath: repoRoot).appendingPathComponent("photools").path
-        if FileManager.default.isExecutableFile(atPath: localBinary) {
-            return localBinary
+        let candidates = [
+            URL(fileURLWithPath: repoRoot).appendingPathComponent("photools").path,
+            URL(fileURLWithPath: repoRoot).appendingPathComponent("dist").appendingPathComponent("photools").path,
+            "/opt/homebrew/bin/photools",
+            "/usr/local/bin/photools",
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin/photools").path
+        ]
+        for candidate in candidates {
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
         }
-        return URL(fileURLWithPath: repoRoot)
-            .appendingPathComponent("dist")
-            .appendingPathComponent("photools")
-            .path
+        return candidates[0]
     }
 }

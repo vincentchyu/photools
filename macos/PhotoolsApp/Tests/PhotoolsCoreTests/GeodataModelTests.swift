@@ -32,6 +32,53 @@ final class GeodataModelTests: XCTestCase {
         XCTAssertEqual(packs[2].pointCount, 1200000)
     }
 
+    func testParseGeodataListJSON() {
+        let jsonString = """
+        [
+          {
+            "meta": {
+              "code": "china",
+              "name_zh": "中国全境高精 (China Ultra)",
+              "aliases": ["cn", "china"],
+              "description": "覆盖中国34省市区县全量行政区划",
+              "approx_points": 32000,
+              "approx_size": "~5.2 MB"
+            },
+            "installed": true,
+            "file_path": "/Users/test/.config/photools/geodata/china.json",
+            "file_size": 469248560,
+            "points": 909818
+          },
+          {
+            "meta": {
+              "code": "asia",
+              "name_zh": "亚洲扩展 (Asia)",
+              "aliases": ["as", "asia"],
+              "description": "覆盖亚洲全境城镇扩展包",
+              "approx_points": 10700,
+              "approx_size": "~1.8 MB"
+            },
+            "installed": false
+          }
+        ]
+        """
+
+        let packs = GeodataParser.parseListJSON(jsonString)
+        XCTAssertEqual(packs.count, 2)
+
+        XCTAssertEqual(packs[0].code, "china")
+        XCTAssertEqual(packs[0].nameZH, "中国全境高精 (China Ultra)")
+        XCTAssertEqual(packs[0].description, "覆盖中国34省市区县全量行政区划")
+        XCTAssertTrue(packs[0].isInstalled)
+        XCTAssertEqual(packs[0].pointCount, 909818)
+        XCTAssertEqual(Int(packs[0].sizeMB), 447)
+
+        XCTAssertEqual(packs[1].code, "asia")
+        XCTAssertEqual(packs[1].nameZH, "亚洲扩展 (Asia)")
+        XCTAssertFalse(packs[1].isInstalled)
+        XCTAssertEqual(packs[1].pointCount, 10700)
+    }
+
     func testParseGeodataLookupOutput() {
         let output = """
         🔍 正在检索经纬度坐标: (31.230000, 121.470000) [海拔: 10.0m]
