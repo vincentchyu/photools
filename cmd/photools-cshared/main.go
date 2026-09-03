@@ -38,6 +38,7 @@ import "C"
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -532,6 +533,75 @@ func Photools_InspectPhotoMetadata(filePath *C.char) *C.char {
 	}
 
 	return C.CString(string(data))
+}
+
+var (
+	lastErrMu  sync.Mutex
+	lastErrMsg string
+)
+
+func setLastError(err error) {
+	lastErrMu.Lock()
+	defer lastErrMu.Unlock()
+	if err != nil {
+		lastErrMsg = err.Error()
+	} else {
+		lastErrMsg = ""
+	}
+}
+
+//export Photools_GetLastErrorMessage
+func Photools_GetLastErrorMessage() *C.char {
+	lastErrMu.Lock()
+	defer lastErrMu.Unlock()
+	if lastErrMsg == "" {
+		return nil
+	}
+	return C.CString(lastErrMsg)
+}
+
+//export Photools_WritePhotoGPSMetadata
+func Photools_WritePhotoGPSMetadata(
+	sourcePath, targetPath *C.char, lat, lon, alt C.double, provJSON *C.char, sidecarPolicy *C.char,
+) C.int {
+	if targetPath == nil {
+		setLastError(errors.New("targetPath 不能为空"))
+		return -1
+	}
+	tPath := C.GoString(targetPath)
+	if tPath == "" {
+		setLastError(errors.New("targetPath 不能为空"))
+		return -1
+	}
+
+	sPath := ""
+	if sourcePath != nil {
+		sPath = C.GoString(sourcePath)
+	}
+
+	var prov domain.GPSProvenance
+	if provJSON != nil {
+		rawProv := C.GoString(provJSON)
+		if rawProv != "" {
+			_ = json.Unmarshal([]byte(rawProv), &prov)
+		}
+	}
+
+	policyStr := "smart"
+	if sidecarPolicy != nil {
+		policyStr = C.GoString(sidecarPolicy)
+	}
+
+	policy := domain.NormalizePolicy(policyStr)
+	runner := exiftool.DefaultRunner()
+
+	err := exiftool.WritePhotoGPSDirectly(runner, sPath, tPath, float64(lat), float64(lon), float64(alt), prov, policy)
+	if err != nil {
+		setLastError(err)
+		return -1
+	}
+	setLastError(nil)
+	return 0
 }
 
 //export Photools_SetLanguage

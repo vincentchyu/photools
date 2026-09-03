@@ -446,9 +446,16 @@ func SyncGPSToXMP(runner CommandRunner, sourceRaw, targetXMP string) error {
 
 // SyncGPSToXMPWithProvenance 将 RAW 中的 GPS 经纬度同步到 XMP 侧车文件并可选写入溯源指纹
 func SyncGPSToXMPWithProvenance(runner CommandRunner, sourceRaw, targetXMP string, prov domain.GPSProvenance) error {
+	cfgPath := EnsureConfigFile()
 	args := []string{
 		"-overwrite_original",
 		"-P",
+	}
+	if cfgPath != "" {
+		args = append(args, "-config", cfgPath)
+	}
+	args = append(
+		args,
 		"-TagsFromFile", sourceRaw,
 		"-XMP-exif:GPSVersionID<GPSVersionID",
 		"-XMP-exif:GPSLatitude<GPSLatitude",
@@ -458,28 +465,142 @@ func SyncGPSToXMPWithProvenance(runner CommandRunner, sourceRaw, targetXMP strin
 		"-XMP-exif:GPSDateTime<GPSDateTime",
 		"-XMP-exif:GPSSatellites<GPSSatellites",
 		"-XMP-exif:GPSMapDatum<GPSMapDatum",
-	}
+	)
 	if prov.Source != "" {
 		provArgs := BuildProvenanceArgs(prov)
 		args = append(args, provArgs...)
 	}
 	args = append(args, targetXMP)
-	_, err := runner.CombinedOutput("exiftool", args...)
+	output, err := runner.CombinedOutput("exiftool", args...)
 	if err != nil {
-		return fmt.Errorf("同步 GPS 经纬度到 XMP 失败：%w", err)
+		return fmt.Errorf("同步 GPS 经纬度到 XMP 失败: %w (详情: %s)", err, string(output))
+	}
+	if bytes.Contains(output, []byte("Error:")) {
+		return fmt.Errorf("同步 GPS 到 XMP 发生错误: %s", string(output))
 	}
 	return nil
+}
+
+// CloneAllGPSMetadata 使用 ExifTool -TagsFromFile 将源照片上的全部 GPS 标签 (GPSVersionID, GPSTimeStamp, GPSDateStamp, GPSDateTime, GPSMapDatum, GPSSatellites, GPSLatitude*, GPSLongitude*, GPSAltitude* 等) 100% 完整克隆写入目标照片
+func CloneAllGPSMetadata(runner CommandRunner, sourcePath, targetPath string) error {
+	output, err := runner.CombinedOutput(
+		"exiftool", "-overwrite_original", "-P",
+		"-TagsFromFile", sourcePath,
+		"-GPS:all",
+		targetPath,
+	)
+	if err != nil {
+		return fmt.Errorf("克隆全量 GPS 元数据到 %s 失败: %w (详情: %s)", targetPath, err, string(output))
+	}
+	if bytes.Contains(output, []byte("Error:")) {
+		return fmt.Errorf("克隆全量 GPS 元数据发生错误: %s", string(output))
+	}
+	return nil
+}
+
+// WritePhotoGPSDirectly 向后兼容薄适配器：自动探测伴随文件资产组并统一委托给全局调度引擎 WriteGPS
+func WritePhotoGPSDirectly(
+	runner CommandRunner, sourcePath, targetPath string, lat, lon, alt float64, prov domain.GPSProvenance,
+	policy domain.SidecarPolicy,
+) error {
+	if targetPath == "" {
+		return errors.New("目标照片路径不能为空")
+	}
+	if _, err := os.Stat(targetPath); err != nil {
+		return fmt.Errorf("目标照片文件不存在: %w", err)
+	}
+
+	if prov.Source == "" {
+		prov.Source = "manual_copied"
+	}
+	if prov.Processor == "" {
+		prov.Processor = domain.DefaultProcessorName
+	}
+	if prov.Timestamp == "" {
+		prov.Timestamp = time.Now().Format(time.RFC3339)
+	}
+
+	asset := FindAssetGroupForPath(targetPath)
+	payload := GPSWritePayload{
+		SourcePhotoPath: sourcePath,
+		Latitude:        lat,
+		Longitude:       lon,
+		Altitude:        alt,
+		Provenance:      prov,
+	}
+
+	_, err := WriteGPS(runner, asset, payload, policy)
+	return err
 }
 
 // ==========================================
 // 2. 逆地理编码地名元数据写入与同步 (Cap 2)
 // ==========================================
 
-// BuildLocationArgs 构造专业级地理位置标签参数（含 IPTC IIM、XMP-photoshop、XMP-iptcCore、IPTC Extension 结构化位置及 Lightroom 分层关键词树）
-func BuildLocationArgs(loc domain.LocationInfo) []string {
+// ReadLocationTags 读取目标照片或 XMP 侧车文件中的现有关键字和分层标签 (用于增量清洗与去重)
+func ReadLocationTags(runner CommandRunner, filePath string) (domain.ExistingTags, error) {
+	if filePath == "" {
+		return domain.ExistingTags{}, nil
+	}
+	if _, err := os.Stat(filePath); err != nil {
+		return domain.ExistingTags{}, nil
+	}
+
+	out, err := runner.CombinedOutput(
+		"exiftool", "-j", "-q", "-m",
+		"-XMP-lr:HierarchicalSubject",
+		"-XMP-dc:subject",
+		"-IPTC:Keywords",
+		filePath,
+	)
+	if err != nil || len(bytes.TrimSpace(out)) == 0 {
+		return domain.ExistingTags{}, nil
+	}
+
+	var records []map[string]any
+	if err := json.Unmarshal(out, &records); err != nil || len(records) == 0 {
+		return domain.ExistingTags{}, nil
+	}
+
+	dict := records[0]
+	parseSlice := func(keys ...string) []string {
+		for _, k := range keys {
+			if v, ok := dict[k]; ok {
+				switch val := v.(type) {
+				case string:
+					if s := strings.TrimSpace(val); s != "" {
+						return []string{s}
+					}
+				case []any:
+					var items []string
+					for _, it := range val {
+						if str, ok := it.(string); ok {
+							if s := strings.TrimSpace(str); s != "" {
+								items = append(items, s)
+							}
+						}
+					}
+					return items
+				case []string:
+					return val
+				}
+			}
+		}
+		return nil
+	}
+
+	return domain.ExistingTags{
+		HierarchicalSubject: parseSlice("HierarchicalSubject", "XMP-lr:HierarchicalSubject"),
+		Subject:             parseSlice("Subject", "XMP-dc:Subject", "subject"),
+		Keywords:            parseSlice("Keywords", "IPTC:Keywords"),
+	}, nil
+}
+
+// BuildLocationArgsWithTags 根据清洗后的标签集合与位置元数据构造原子写入指令 (原子清空并全量重写，绝不使用 +=)
+func BuildLocationArgsWithTags(loc domain.LocationInfo, tags domain.CleanedLocationTags) []string {
 	var args []string
 
-	// 1. 基础国省市行政区划 (XMP-photoshop & IPTC IIM)
+	// 1. 基础国省市行政区划 (XMP-photoshop & IPTC IIM & IPTC Extension)
 	if loc.Country != "" {
 		args = append(
 			args,
@@ -526,43 +647,51 @@ func BuildLocationArgs(loc domain.LocationInfo) []string {
 			fmt.Sprintf("-XMP-iptcExt:LocationCreatedSublocation=%s", loc.District),
 			fmt.Sprintf("-XMP-iptcExt:LocationShownSublocation=%s", loc.District),
 		)
+	} else {
+		// 显式重置/置空区县字段，根除旧地名 Sublocation 残留 (避免缝合怪)
+		args = append(
+			args,
+			"-XMP-iptcCore:Location=",
+			"-IPTC:Sub-location=",
+			"-XMP-iptcExt:LocationCreatedSublocation=",
+			"-XMP-iptcExt:LocationShownSublocation=",
+		)
 	}
 
 	// 2. 专业分层关键词树 (HierarchicalSubject) 与关键字列表 (Subject / Keywords)
-	var hierarchyParts []string
-	if loc.Country != "" {
-		hierarchyParts = append(hierarchyParts, loc.Country)
-	}
-	if loc.Province != "" {
-		hierarchyParts = append(hierarchyParts, loc.Province)
-	}
-	if loc.City != "" && loc.City != loc.Province {
-		hierarchyParts = append(hierarchyParts, loc.City)
-	}
-	if loc.District != "" {
-		hierarchyParts = append(hierarchyParts, loc.District)
+	// 彻底废除 +=，采用原子置空 + 全量重写
+	args = append(args, "-XMP-lr:HierarchicalSubject=")
+	for _, tree := range tags.HierarchicalSubject {
+		args = append(args, fmt.Sprintf("-XMP-lr:HierarchicalSubject=%s", tree))
 	}
 
-	if len(hierarchyParts) > 0 {
-		hierarchicalTag := strings.Join(hierarchyParts, "|")
-		args = append(args, fmt.Sprintf("-XMP-lr:HierarchicalSubject+=%s", hierarchicalTag))
-		for _, part := range hierarchyParts {
-			args = append(
-				args,
-				fmt.Sprintf("-XMP-dc:subject+=%s", part),
-				fmt.Sprintf("-IPTC:Keywords+=%s", part),
-			)
-		}
+	args = append(args, "-XMP-dc:subject=")
+	for _, sub := range tags.Subject {
+		args = append(args, fmt.Sprintf("-XMP-dc:subject=%s", sub))
+	}
+
+	args = append(args, "-IPTC:Keywords=")
+	for _, kw := range tags.Keywords {
+		args = append(args, fmt.Sprintf("-IPTC:Keywords=%s", kw))
 	}
 
 	return args
 }
 
-// WriteLocation 写入逆地理编码地名标签到照片文件（内嵌模式）
-func WriteLocation(runner CommandRunner, filePath string, loc domain.LocationInfo) error {
+// BuildLocationArgs 向后兼容适配器：默认以全新纯净状态构造写入参数
+func BuildLocationArgs(loc domain.LocationInfo) []string {
+	tags := domain.CleanAndMergeLocationTags(domain.ExistingTags{}, loc)
+	return BuildLocationArgsWithTags(loc, tags)
+}
+
+// WriteLocationToMedia 写入逆地理编码地名标签到照片媒体文件（内嵌模式，先读出旧标签清洗合并再原子写入）
+func WriteLocationToMedia(runner CommandRunner, filePath string, loc domain.LocationInfo) error {
 	if loc.City == "" && loc.Province == "" && loc.Country == "" && loc.District == "" {
 		return nil
 	}
+
+	existing, _ := ReadLocationTags(runner, filePath)
+	cleanedTags := domain.CleanAndMergeLocationTags(existing, loc)
 
 	args := []string{
 		"-overwrite_original",
@@ -570,7 +699,7 @@ func WriteLocation(runner CommandRunner, filePath string, loc domain.LocationInf
 		"-charset", "UTF8",
 		"-codedcharacterset=utf8",
 	}
-	args = append(args, BuildLocationArgs(loc)...)
+	args = append(args, BuildLocationArgsWithTags(loc, cleanedTags)...)
 	args = append(args, filePath)
 
 	_, err := runner.CombinedOutput("exiftool", args...)
@@ -580,11 +709,14 @@ func WriteLocation(runner CommandRunner, filePath string, loc domain.LocationInf
 	return nil
 }
 
-// WriteLocationToXMP 🌟 写入逆地理编码地名标签到 XMP 侧车文件（Sidecar-Only 模式专用）
+// WriteLocationToXMP 🌟 写入逆地理编码地名标签到 XMP 侧车文件（先读出旧标签清洗合并再原子写入）
 func WriteLocationToXMP(runner CommandRunner, xmpPath string, loc domain.LocationInfo) error {
 	if loc.City == "" && loc.Province == "" && loc.Country == "" && loc.District == "" {
 		return nil
 	}
+
+	existing, _ := ReadLocationTags(runner, xmpPath)
+	cleanedTags := domain.CleanAndMergeLocationTags(existing, loc)
 
 	args := []string{
 		"-overwrite_original",
@@ -592,7 +724,7 @@ func WriteLocationToXMP(runner CommandRunner, xmpPath string, loc domain.Locatio
 		"-charset", "UTF8",
 		"-codedcharacterset=utf8",
 	}
-	args = append(args, BuildLocationArgs(loc)...)
+	args = append(args, BuildLocationArgsWithTags(loc, cleanedTags)...)
 	args = append(args, xmpPath)
 
 	_, err := runner.CombinedOutput("exiftool", args...)

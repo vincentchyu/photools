@@ -3,7 +3,8 @@
 /Logs/
 /Processed/
 /.gocache/
-dist/
+dist/*
+!dist/Releases1.md
 /.agents/
 /test/
 /test1/

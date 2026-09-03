@@ -49,6 +49,13 @@
 3. **`reverse_geocode` (Priority 20 · 阶段 3)**:
    - 基于 3D KD-Tree 离线高精空间索引；
    - 写入国家、省份、城市、区县、风景区 POI 中文元数据（IPTC/XMP），支持 IPTC Extension 完整结构化位置模型 (`LocationCreated` / `LocationShown`) 与 Lightroom 分层关键词标签树 (`XMP-lr:HierarchicalSubject`)；
+   - **绝对幂等性与标签清洗铁律 (Idempotency & Clean-Merge)** ✨：
+       - 严禁使用破坏幂等性的无脑追加（`+=`），必须采用 ExifTool 官方标准的“单次指令内原子置空并全量重写”模式（先置空
+         `-XMP-lr:HierarchicalSubject=` 再重新赋值）；
+       - 必须通过 `domain.CleanAndMergeLocationTags` 精准剥离旧地理层级树（`中国|` / `China|`），同时 **100%
+         完整保护摄影师自定义业务标签与题材关键词**（如 `题材|人像|户外`、`扫街` 等），并使用 Set 机制保序去重；
+       - 坐标缺失区县/POI 时必须显式置空相关标签，彻底杜绝跨机位纠偏时产生的“历史地名缝合怪”；
+       - 写入后必须通过 `VerifyLocationTags` 进行二次回读断言，确认标签真实落盘且绝无重复项。
    - **离线地理数据包终端安装规约**：为保证地理数据库来源准确性、网络完整性与数据源校验，离线数据包严禁在 GUI 客户端内隐式下载安装，必须由使用者在终端（CLI）中显式执行 `photools geodata install <target>` 安装。GUI 仅负责状态探测、命令复制与 3D KD-Tree 坐标反查测试。
 4. **`date_archive` (Priority 100 · 阶段 4)**:
    - 依据原始拍摄日期规范化重命名；
@@ -137,6 +144,20 @@
 4. **主资产与排序**：
    - 资产列表必须以 `PhotoAssetGroup`（配套单元组）为核心展示单位；
    - 扫描阶段必须提取主文件 `fileModificationDate`，默认提供时间升序/降序及文件名升序/降序多维排序。
+5. **已归档资产 (Processed) 层级下探与极地冰蓝冻结 UI 体系** ✨：
+    - 必须提供子目录层级下探（`ProcessedFolderItem` + 面包屑导航 `Processed > 2026 > 0101`）与全局递归平铺双重浏览架构；
+    - 已归档资产全面采用极地冰蓝（`Cyan / Frost Blue`）冻结只读视觉语义，列表卡片配备安全锁盾徽章与雪花图标，详情面板常驻只读横幅，严禁提供删除等破坏性操作；
+    - 资产统计口径必须严格遵从 Primary Asset Model，统一显示资产组数（`processedAssetGroupCount`），杜绝与底层物理碎文件总数产生认知分歧；
+6. **全键盘极速看图与系统原生 QuickLook 浮层联动** ✨：
+    - 在待选（Inbox）与归档（Processed）列表中，按空格键（Space）瞬间唤起/关闭系统原生 QuickLook 大图浮层；
+    - 必须接入进程级 `NSEvent.addLocalMonitorForEvents(matching: .keyDown)` 拦截，彻底规避 QuickLook 浮层夺焦成为 Key
+      Window 后导致列表方向键失效的 AppKit 系统级难题；
+    - 按 `↑ / ↓ / ← / →` 方向键切图时，同步刷新 `selectedAssetID` 并向底层发送 `QLPreviewPanel.shared().reloadData()`
+      强制刷新大图，配合 `ScrollViewReader` 自动平滑居中滚动跟随；输入框打字通过 `@FocusState` 深度防误触；
+7. **全局常驻底部状态栏防呆中枢与专业时间排版** ✨：
+    - 底部全局常驻四档色彩策略徽章（智能分层/纯XMP/双写同步/纯内嵌），采用原生带 checkmark 的 Button 列表规避 Menu 嵌套
+      Picker 导致的 Label 丢失 Bug，确立为全应用唯一的执行策略确认与保护中枢；
+    - 照片核心拍摄时间（`DateTimeOriginal`）统一采用高亮等宽半加粗蓝色（`Color.blue`）展示，强化关键时间事实的可读性与专业质感。
 
 ---
 
@@ -180,6 +201,35 @@
     - AI Agent 在执行 `go test`、`go build`、`go mod` 等 Go 相关命令时，知晓宿主机的真实 Go 二进制位于
       `/Users/vincent/.asdf/installs/golang/1.27.1/go/bin/go`，并在需要外部 Go 工具链时显式请求沙盒穿透（
       `BypassSandbox: true`）或使用绝对路径。
+3. **Modern Go 现代语法规范守卫 (`use-modern-go`)**：
+    - 凡是涉及编写、修改或重构 Golang 后端代码，AI Agent 必须主动在当前会话中读取并严格遵从 `use-modern-go` 技能（Modern Go
+      Guidelines），编写符合目标 Go 版本的现代、地道 Go 代码（优先使用 `slices.Contains`、`slices.Index`、`maps`、`cmp.Or`、
+      `min/max`、`clear` 等），坚决禁止手写传统低效冗长循环与落后过时模式。
 
+---
 
+## 11. 元数据分层写入调度器与职责边界架构铁律 (AI 必遵)
 
+详细架构与边界规约见独立技术文档：[
+`docs/METADATA_POLICY_DISPATCHER_ARCHITECTURE.md`](docs/METADATA_POLICY_DISPATCHER_ARCHITECTURE.md)。
+
+1. **严禁各家各写一套策略调度 (No Scattered Policy Logic)**：
+    - 严禁在任何能力插件（如 `gpx_matching`、`gps_interpolate`、`reverse_geocode`）或客户端操作中单独手写针对
+      `SidecarPolicy` 的 `switch` 分支；
+    - 全库所有 GPS 写入必须统一步调调用 `exiftool.WriteGPS`，所有地名写入必须统一步调调用 `exiftool.WriteLocation`；
+2. **原子能力与策略编排彻底解耦 (Primitives vs Dispatcher)**：
+    - **下层 (`internal/exiftool`)**：保持绝对纯净，仅提供单一职责的原子工具函数（如 `WriteCoordinates`、
+      `CloneAllGPSMetadata`、`WriteLocationToMedia`、`WriteLocationToXMP`、`VerifyGPSTags` 等），严禁掺杂业务策略；
+    - **中层 (`internal/exiftool/dispatcher.go`)**：统领拍摄单元资产组（`domain.AssetGroup`）在四档策略（`smart`、
+      `sidecar_only`、`embed_and_sidecar`、`embed_only`）下的物理调度，并集中保证二次读取回验；
+3. **全场景元数据写入职责边界矩阵 (Writing Boundary Matrix)**：
+    - **第二层修正事实 (`gpx_matching` / `gps_interpolate` / 快捷键手动写入)**：仅操作 GPS 经纬度、海拔与时间戳，
+      **绝对严禁写入或触碰任何中文地名/IPTC 标签**；手动拷贝优先无损克隆全部 13+ 项物理机身字段；强制注入 `XMP-photools`
+      溯源指纹；
+    - **第三层派生信息 (`reverse_geocode`)**：仅写入中文地名与分层标签， **绝对严禁重写或篡改既有 GPS 坐标**；`smart` 模式下
+      RAW 保持只读仅写 XMP，JPG 直接内嵌；
+4. **强制二次读取校验 (Secondary Read Verification)**：
+    - 任何写入操作必须在底层读回 `GPSPosition` 或地名标签确认真实落盘，读空或失败坚决阻断并返回错误诊断，严禁仅依赖子进程退出码冒充成功；
+5. **专业工具非黑盒原则 (Transparent Professional Principle)**：
+    - 桌面端与 TUI 界面展示 GPS 时必须全透明呈现所有待写入的 13+ 项机身物理字段；执行写入时必须明确告知当前遵循的策略模式与写入文件范围；底层失败必须将
+      ExifTool 真实错误诊断向上传递呈现，严禁黑盒猜疑。

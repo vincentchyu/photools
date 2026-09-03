@@ -527,84 +527,20 @@ func (c *Capability) ExecuteProcess(
 		Timestamp:   time.Now().Format(time.RFC3339),
 	}
 
-	// 4. 写入 GPS 经纬度（根据 SidecarPolicy 四档策略调度写入目标）
-	switch actx.GetPolicy() {
-	case domain.PolicySidecarOnly:
-		// 纯侧车模式：所有文件均不改动原图，全部写入 .xmp 侧车文件并注入溯源指纹
-		targetXMP := actx.Asset.SidecarPathFor(primary)
-		if actx.Asset.HasXMP() {
-			targetXMP = actx.Asset.XMPPath
-		}
-		if err := exiftool.WriteCoordinatesToXMPWithProvenance(c.runner, targetXMP, targetLat, targetLon, targetAlt, prov); err != nil {
-			return fmt.Errorf("写入插值 GPS 坐标到 XMP 侧车文件失败: %w", err)
-		}
-		actx.RecordModifiedFile(targetXMP)
-
-		// 若存在配对的 JPG，亦为 JPG 生成专属的 {file}.xmp 侧车文件
-		if actx.Asset.HasRaw() && actx.Asset.HasJPG() {
-			jpgXMP := actx.Asset.SidecarPathFor(actx.Asset.JPGPath)
-			if jpgXMP != targetXMP {
-				_ = exiftool.WriteCoordinatesToXMPWithProvenance(c.runner, jpgXMP, targetLat, targetLon, targetAlt, prov)
-				actx.RecordModifiedFile(jpgXMP)
-			}
-		}
-
-	case domain.PolicySmart, domain.PolicyReadOnly:
-		// 智能分层模式（默认/推荐）：
-		// GPS 属于第二层修正事实 (IntentCorrectedFact) -> 写入 RAW EXIF 头部 + 伴随 JPG 内嵌 + 同步更新 XMP 侧车并附带溯源指纹
-		if actx.Asset.HasRaw() {
-			// 1) 写入 RAW EXIF 头部
-			if err := exiftool.WriteCoordinates(c.runner, actx.Asset.RawPath, targetLat, targetLon, targetAlt); err != nil {
-				return fmt.Errorf("RAW 写入插值 GPS 坐标失败: %w", err)
-			}
-			actx.RecordModifiedFile(actx.Asset.RawPath)
-
-			// 2) 同步写入 .nef.xmp 侧车并注入溯源指纹
-			targetXMP := actx.Asset.SidecarPathFor(actx.Asset.RawPath)
-			if actx.Asset.HasXMP() {
-				targetXMP = actx.Asset.XMPPath
-			}
-			if err := exiftool.WriteCoordinatesToXMPWithProvenance(c.runner, targetXMP, targetLat, targetLon, targetAlt, prov); err == nil {
-				actx.RecordModifiedFile(targetXMP)
-			}
-
-			// 3) 若存在配对 JPG，同步写入 JPG 内嵌 EXIF
-			if actx.Asset.HasJPG() {
-				_ = exiftool.WriteCoordinates(c.runner, actx.Asset.JPGPath, targetLat, targetLon, targetAlt)
-				actx.RecordModifiedFile(actx.Asset.JPGPath)
-			}
-		} else {
-			// 单 JPG 资产：直接内嵌写入
-			if err := exiftool.WriteCoordinates(c.runner, primary, targetLat, targetLon, targetAlt); err != nil {
-				return fmt.Errorf("JPG 写入插值 GPS 坐标失败: %w", err)
-			}
-			actx.RecordModifiedFile(primary)
-
-			if actx.Asset.HasXMP() {
-				_ = exiftool.WriteCoordinatesToXMPWithProvenance(c.runner, actx.Asset.XMPPath, targetLat, targetLon, targetAlt, prov)
-				actx.RecordModifiedFile(actx.Asset.XMPPath)
-			}
-		}
-
-	case domain.PolicyEmbedAndSidecar, domain.PolicyEmbedOnly:
-		// 内嵌模式：直接修改原图 (RAW/JPG)
-		if err := exiftool.WriteCoordinates(c.runner, primary, targetLat, targetLon, targetAlt); err != nil {
-			return fmt.Errorf("写入插值 GPS 坐标失败: %w", err)
-		}
-		actx.RecordModifiedFile(primary)
-
-		if actx.Asset.HasRaw() && actx.Asset.HasJPG() {
-			_ = exiftool.SyncGPSToJPG(c.runner, actx.Asset.RawPath, actx.Asset.JPGPath)
-			actx.RecordModifiedFile(actx.Asset.JPGPath)
-		}
-		if actx.GetPolicy() == domain.PolicyEmbedAndSidecar || actx.Asset.HasXMP() {
-			targetXMP := actx.Asset.XMPPath
-			if targetXMP == "" {
-				targetXMP = actx.Asset.SidecarPathFor(primary)
-			}
-			_ = exiftool.SyncGPSToXMPWithProvenance(c.runner, primary, targetXMP, prov)
-			actx.RecordModifiedFile(targetXMP)
-		}
+	// 4. 写入 GPS 经纬度（委托给全局统一调度引擎 WriteGPS，严格遵守第二层修正事实规约与四档 SidecarPolicy）
+	modifiedFiles, err := exiftool.WriteGPS(
+		c.runner, actx.Asset, exiftool.GPSWritePayload{
+			Latitude:   targetLat,
+			Longitude:  targetLon,
+			Altitude:   targetAlt,
+			Provenance: prov,
+		}, actx.GetPolicy(),
+	)
+	if err != nil {
+		return fmt.Errorf("写入插值 GPS 坐标失败: %w", err)
+	}
+	for _, f := range modifiedFiles {
+		actx.RecordModifiedFile(f)
 	}
 
 	// 5. 更新上下文状态并合入索引

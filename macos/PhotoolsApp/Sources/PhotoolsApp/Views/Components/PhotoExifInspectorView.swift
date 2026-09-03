@@ -17,14 +17,22 @@ public struct PhotoExifInspectorView: View {
     @State private var previewGeocodeResult: GeodataLookupResult?
     @State private var isPreviewLoading: Bool = false
 
-    public init(store: WorkspaceStore, asset: PhotoAssetGroup) {
+    let isArchivedFrozen: Bool
+
+    public init(store: WorkspaceStore, asset: PhotoAssetGroup, isArchivedFrozen: Bool = false) {
         self.store = store
         self.asset = asset
+        self.isArchivedFrozen = isArchivedFrozen
     }
 
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                // -1. 归档冻结只读提示横幅 (若处于已归档模式)
+                if isArchivedFrozen {
+                    archivedFrozenBanner
+                }
+
                 // 0. 高清图片预览卡片
                 largePhotoPreviewCard
 
@@ -232,13 +240,13 @@ public struct PhotoExifInspectorView: View {
                         HStack(spacing: 6) {
                             Image(systemName: "calendar")
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Color.blue)
                             Text(lang.text(.captureTime) + ":")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                             Text(date)
-                                .font(.caption2.monospaced())
-                                .foregroundStyle(.primary)
+                                .font(.caption2.monospaced().weight(.semibold))
+                                .foregroundStyle(Color.blue)
                         }
                     }
                 }
@@ -791,5 +799,39 @@ public struct PhotoExifInspectorView: View {
         default:
             return method
         }
+    }
+
+    // MARK: - 已归档资产冰蓝只读横幅
+    private var archivedFrozenBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "snowflake")
+                .font(.title3.weight(.bold))
+                .foregroundStyle(Color.cyan)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text("已归档资产 (只读冻结保护)")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(Color.cyan)
+                    Text("FROZEN")
+                        .font(.system(size: 8, weight: .black, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color.cyan.opacity(0.8), in: RoundedRectangle(cornerRadius: 3))
+                }
+                Text("该照片已完成轨迹匹配、逆地理打标与拍摄日期规范归档，元数据与物理原图受保护锁定。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(10)
+        .background(Color.cyan.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.cyan.opacity(0.3), lineWidth: 1)
+        )
     }
 }

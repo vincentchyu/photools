@@ -10,6 +10,7 @@ public struct WorkspaceSummary: Equatable, Sendable {
     public let gpxFiles: [String]
     public let assetGroups: [PhotoAssetGroup]
     public let processedFileCount: Int
+    public let processedAssetGroups: [PhotoAssetGroup]
     public let backupFileCount: Int
     public let logFilePath: String
     public let pendingReportPath: String
@@ -26,6 +27,7 @@ public struct WorkspaceSummary: Equatable, Sendable {
         gpxFiles: [String],
         assetGroups: [PhotoAssetGroup],
         processedFileCount: Int,
+        processedAssetGroups: [PhotoAssetGroup] = [],
         backupFileCount: Int = 0,
         logFilePath: String,
         pendingReportPath: String,
@@ -41,6 +43,7 @@ public struct WorkspaceSummary: Equatable, Sendable {
         self.gpxFiles = gpxFiles
         self.assetGroups = assetGroups
         self.processedFileCount = processedFileCount
+        self.processedAssetGroups = processedAssetGroups
         self.backupFileCount = backupFileCount
         self.logFilePath = logFilePath
         self.pendingReportPath = pendingReportPath
@@ -66,6 +69,13 @@ public struct WorkspaceSummary: Equatable, Sendable {
 
     public var companionOnlyCount: Int {
         assetGroups.filter { $0.primaryType == .companionOnly }.count
+    }
+
+    public var processedAssetGroupCount: Int {
+        if !processedAssetGroups.isEmpty {
+            return processedAssetGroups.count
+        }
+        return processedFileCount
     }
 
     public var hasGPX: Bool {

@@ -262,6 +262,60 @@ stateDiagram-v2
 
 每行照片列表（`AssetRow`）下方清晰渲染拍摄时间（如 `2026-08-25 09:30:15`），彻底杜绝跨卷与特殊命名下的乱序问题。
 
+### 4.5 常驻底部状态栏与写入策略防呆中枢 (Status Bar & Policy Protection)
+
+针对摄影师在执行流水线前“无法感知当前策略、盲目直接执行”的核心痛点，建立全局常驻底部状态栏（`statusBarView`）：
+
+- **全景色彩徽章**：以高质感圆角胶囊呈现当前元数据保护级别：
+    - `smart`: `[🌟 策略: 智能分层模式 ▾]`（绿色 · RAW 写 GPS/时间 + 仅 XMP 承载地名，JPG 全写入）
+    - `sidecar_only`: `[🛡️ 策略: 纯 XMP 侧车模式 ▾]`（安全蓝 · RAW/JPG 绝对只读保护）
+    - `embed_and_sidecar`: `[📝 策略: 双写同步模式 ▾]`（紫色 · 原图与 XMP 均同步写入）
+    - `embed_only`: `[⚠️ 策略: 纯原图内嵌写入 ▾]`（警示橙 · 仅写入原图内嵌 EXIF）
+- **杜绝 NSPopUpButton 吞噬缺陷**：避免 `Menu` 嵌套 `Picker` 导致 AppKit 强制抹除自定义 Label 仅剩箭头的系统缺陷，使用原生带
+  `checkmark` 的 `Button` 列表结合 `.buttonStyle(.plain)` 与 `.fixedSize()` 渲染；
+- **UI/UX 极致去冗余**：移除了执行主大按钮下方的重复提示条与顶部 Header 的重复待处理胶囊，确立状态栏为唯一的全局策略中枢与操作前防呆确认点。
+
+### 4.6 已归档照片 (Processed) 目录层级下探与极地冰蓝冻结 UI 体系
+
+为满足摄影师对历史已归档资产的浏览、下探与安全检查需求，侧边栏“已归档照片”提供与待处理等齐的完整管理面板：
+
+- **双重浏览架构**：
+    1. **子目录层级下探 (Hierarchical Drill-Down，默认)**：依据 `Processed/YYYY/MMDD/...` 物理目录树提取直接子文件夹（
+       `ProcessedFolderItem`，按日期倒序排列），点击深入下探；顶部常驻面包屑导航条（`[📁 Processed > 2026 > 0101]`
+       ），支持一键点击祖先节点返回；
+    2. **全局递归平铺模式 (Recursive Flat Mode)**：右上角提供 `[目录 / 平铺]` 切换开关，平铺时无视层级打平展示所有归档照片，并标注相对归档日期路径；
+    3. **类型筛选与文件名搜索**：支持全部/有GPS/无GPS/RAW+JPG/单RAW等类型筛选，修复了系统 Picker 造成的“全部 全部”重复
+       Label 缺陷（规范化为 `筛选: [ 全部 ▾ ]`）。
+- **极地冰蓝冻结只读视觉体系 (Arctic Frost Theme)**：
+    - 视觉心智区分：待处理照片（Inbox）采用活动绿/任务蓝；已归档照片（Processed）全面采用极地冰蓝（`Cyan / Frost Blue`）；
+    - 列表卡片（`ArchivedAssetRow`）：缩略图角标带有冰蓝雪花 `[ ❄️ ]`，文件名旁配备安全锁盾徽章 `[ 🔒 lock.shield.fill ]`
+      ，副标题等宽展示相对归档路径；
+    - 右键上下文菜单移除“删除”等破坏性操作，仅保留定位、打开与拷贝 GPS 等安全只读操作；
+    - 右侧元数据面板（`PhotoExifInspectorView`）：顶部常驻微磨砂质感的 `❄️ 已归档资产 (只读冻结保护) [FROZEN]` 保护横幅。
+- **统计口径严格统一（资产主文件优先模型）**：
+    - 侧边栏“归档目录”与工作台“已归档”指标卡片的徽章数量，由底层物理碎文件总数（如 177 = 59组 × 3个文件）统一修正为摄影资产组数（
+      `processedAssetGroupCount`，59 组照片），使侧边栏、列表头部与详情统计 100% 保持一致。
+
+### 4.7 全键盘极速看图与系统原生 QuickLook 浮层联动
+
+深度贯彻 macOS 摄影师全键盘高效看图与挑图工作流：
+
+- **空格键 (Space) 即开即关**：在待选照片或归档照片列表中，按空格键瞬间唤起系统级 QuickLook 大图浮层（优先采用极速 JPG
+  伴随文件，无 JPG 时自动加载 RAW 原片），再次按空格或 Esc 即刻关闭；
+- **解决焦点转移下的方向键切图难题**：
+    - 针对 QuickLook 弹出成为 Key Window 时背部 List 失去焦点导致方向键失效的问题，接入进程级 **
+      `NSEvent.addLocalMonitorForEvents(matching: .keyDown)`** 监听器；
+    - 捕获 `↑ / ↓ / ← / →` 方向键，无缝调用 `selectNextAsset()` / `selectPreviousAsset()`；
+    - 在当前筛选与搜索结果（`currentDisplayedAssets`）内连续平滑切图，并通过 **`QLPreviewPanel.shared().reloadData()`** 强制让
+      QuickLook 浮层毫秒级同步重载大图；
+    - 配合 **`ScrollViewReader`** 实现背部列表自动居中滚动跟焦；
+- **打字防误触保障**：通过 `@FocusState` 严格检测焦点，当用户在搜索框（`NSTextView`）打字输入带空格内容时，绝不拦截按键。
+
+### 4.8 核心拍摄时间高亮等宽半加粗蓝色展示
+
+在照片 EXIF 检查器（`PhotoExifInspectorView`）与 GPS 元数据卡片（`CopiedGPSInspectorSheet`）中，日历图标与时间数值（
+`DateTimeOriginal`）统一采用高亮等宽半加粗蓝色（`Color.blue`）展示，强化关键时间事实的可读性与专业摄影元数据排版质感。
+
 ---
 
 ## 5. 快照管理与测试环境还原体系 (Snapshot & Restore)

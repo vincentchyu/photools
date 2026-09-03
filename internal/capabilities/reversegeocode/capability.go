@@ -205,79 +205,12 @@ func (c *Capability) ExecuteProcess(ctx context.Context, actx *domain.AssetConte
 	// 1. 写入地名元数据（根据 SidecarPolicy 四档策略调度写入目标）
 	targetMain := actx.Asset.PrimaryPath()
 	if targetMain != "" {
-		switch actx.GetPolicy() {
-		case domain.PolicySidecarOnly:
-			// 纯侧车模式：所有文件均不改动原图，全部写入 .xmp 侧车文件
-			targetXMP := actx.Asset.SidecarPathFor(targetMain)
-			if actx.Asset.HasXMP() {
-				targetXMP = actx.Asset.XMPPath
-			}
-			if err := exiftool.WriteLocationToXMP(c.runner, targetXMP, *loc); err != nil {
-				return fmt.Errorf("写入地名元数据到 XMP 侧车文件失败 (%s): %w", targetXMP, err)
-			}
-			actx.RecordModifiedFile(targetXMP)
-
-			// 若存在配对的 JPG，亦为 JPG 生成专属的 {file}.xmp 侧车文件
-			if actx.Asset.HasRaw() && actx.Asset.HasJPG() {
-				jpgXMP := actx.Asset.SidecarPathFor(actx.Asset.JPGPath)
-				if jpgXMP != targetXMP {
-					_ = exiftool.WriteLocationToXMP(c.runner, jpgXMP, *loc)
-					actx.RecordModifiedFile(jpgXMP)
-				}
-			}
-
-		case domain.PolicySmart, domain.PolicyReadOnly:
-			// 智能分层模式（默认/推荐）：
-			// 地名/标签属于第三层派生信息 (IntentDerivedInfo) -> 严禁为了地名修改 RAW 原图，RAW 严格生成/更新 .nef.xmp 侧车，JPG 交付格式直接内嵌写入
-			if actx.Asset.HasRaw() {
-				targetXMP := actx.Asset.SidecarPathFor(actx.Asset.RawPath)
-				if actx.Asset.HasXMP() {
-					targetXMP = actx.Asset.XMPPath
-				}
-				if err := exiftool.WriteLocationToXMP(c.runner, targetXMP, *loc); err != nil {
-					return fmt.Errorf("RAW 资产写入地名元数据到 XMP 失败 (%s): %w", targetXMP, err)
-				}
-				actx.RecordModifiedFile(targetXMP)
-
-				if actx.Asset.HasJPG() {
-					if err := exiftool.WriteLocation(c.runner, actx.Asset.JPGPath, *loc); err != nil {
-						return fmt.Errorf("写入 JPG 地名元数据失败 (%s): %w", actx.Asset.JPGPath, err)
-					}
-					actx.RecordModifiedFile(actx.Asset.JPGPath)
-				}
-			} else {
-				if err := exiftool.WriteLocation(c.runner, targetMain, *loc); err != nil {
-					return fmt.Errorf("写入 JPG 地名元数据失败 (%s): %w", targetMain, err)
-				}
-				actx.RecordModifiedFile(targetMain)
-			}
-
-		case domain.PolicyEmbedAndSidecar, domain.PolicyEmbedOnly:
-			// 内嵌模式：写入主文件
-			if err := exiftool.WriteLocation(c.runner, targetMain, *loc); err != nil {
-				return fmt.Errorf("写入地名元数据失败 (%s): %w", targetMain, err)
-			}
-			actx.RecordModifiedFile(targetMain)
-
-			// 同步到配对 JPG
-			if actx.Asset.HasRaw() && actx.Asset.HasJPG() {
-				if err := exiftool.SyncLocationToJPG(c.runner, actx.Asset.RawPath, actx.Asset.JPGPath); err != nil {
-					return fmt.Errorf("同步地名元数据到 JPG 失败: %w", err)
-				}
-				actx.RecordModifiedFile(actx.Asset.JPGPath)
-			}
-
-			// 同步到 XMP
-			if actx.SidecarPolicy == domain.PolicyEmbedAndSidecar || actx.Asset.HasXMP() {
-				targetXMP := actx.Asset.XMPPath
-				if targetXMP == "" {
-					targetXMP = actx.Asset.SidecarPathFor(targetMain)
-				}
-				if err := exiftool.SyncLocationToXMP(c.runner, targetMain, targetXMP); err != nil {
-					return fmt.Errorf("同步地名元数据到 XMP 失败: %w", err)
-				}
-				actx.RecordModifiedFile(targetXMP)
-			}
+		modifiedFiles, err := exiftool.WriteLocation(c.runner, actx.Asset, *loc, actx.GetPolicy())
+		if err != nil {
+			return err
+		}
+		for _, f := range modifiedFiles {
+			actx.RecordModifiedFile(f)
 		}
 	}
 

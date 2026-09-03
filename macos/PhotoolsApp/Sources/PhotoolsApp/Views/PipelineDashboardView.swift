@@ -11,7 +11,7 @@ public struct PipelineDashboardView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                // 1. 顶部工作区状态
+                // 1. 顶部工作区状态 (纯粹舒展，零拥挤零截断)
                 headerView
 
                 // 2. 统计指标卡片组
@@ -19,60 +19,22 @@ public struct PipelineDashboardView: View {
 
                 // 3. 四大核心自动化处理能力
                 capabilitiesSection
+
+                // 4. 沉浸式主执行面板 (全宽主按钮 + 安全策略防呆确认)
+                pipelineActionDeck
             }
             .padding(18)
         }
     }
 
-    // 顶部工作区状态栏
+    // 顶部工作区状态栏 (纯净利落，无重复信息)
     private var headerView: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
-                // Text(lang.text(.workbenchTitle))
-                //    .font(.title2.weight(.bold))
-                Text(lang.text(.workbenchSubtitle))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            // 核心执行主按钮组
-            HStack(spacing: 8) {
-                if store.runState.isRunning {
-                    Button(role: .destructive) {
-                        store.cancelCurrentTask()
-                    } label: {
-                        Label(lang.text(.interruptPipeline), systemImage: "stop.fill")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .keyboardShortcut(".", modifiers: .command)
-                    .help(lang.text(.interruptPipelineHelp))
-                    .pulseOnHover(scale: 1.05, glowColor: .red)
-                } else {
-                    Button {
-                        store.runPipeline()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "play.fill")
-                            Text(lang.text(.runPipeline))
-                            Text("⌘↩")
-                                .font(.caption2.weight(.semibold))
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background(Color.white.opacity(0.2), in: RoundedRectangle(cornerRadius: 3))
-                        }
-                        .font(.subheadline.weight(.semibold))
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.accentColor)
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .help(lang.text(.runPipelineHelp))
-                    .pulseOnHover(scale: 1.05, glowColor: .accentColor)
-                }
-            }
+        VStack(alignment: .leading, spacing: 3) {
+            Text(lang.text(.workbenchTitle))
+                .font(.title2.weight(.bold))
+            Text(lang.text(.workbenchSubtitle))
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -83,7 +45,7 @@ public struct PipelineDashboardView: View {
             metricCard(title: lang.text(.metricInbox), value: "\(store.summary?.readyCount ?? 0)", icon: "tray.full.fill", color: .green)
             metricCard(title: lang.text(.metricRawPair), value: "\(store.summary?.rawPairCount ?? 0)", icon: "photo.stack.fill", color: .purple)
             metricCard(title: lang.text(.metricSingleFile), value: "\((store.summary?.rawOnlyCount ?? 0) + (store.summary?.jpgOnlyCount ?? 0))", icon: "photo.fill", color: .orange)
-            metricCard(title: lang.text(.metricArchived), value: "\(store.summary?.processedFileCount ?? 0)", icon: "archivebox.fill", color: .indigo)
+            metricCard(title: lang.text(.metricArchived), value: "\(store.summary?.processedAssetGroupCount ?? 0)", icon: "archivebox.fill", color: .indigo)
         }
     }
 
@@ -248,5 +210,62 @@ public struct PipelineDashboardView: View {
                         .stroke(isEnabled.wrappedValue ? accentColor.opacity(0.3) : Color.secondary.opacity(0.1), lineWidth: 1)
                 )
         )
+    }
+
+    // MARK: - 沉浸式主执行控制面板 (Call to Action)
+    private var pipelineActionDeck: some View {
+        VStack(spacing: 12) {
+            Divider()
+
+            // 1. 全宽主行动按钮 (Prominent Action Button，呼吸感极佳，绝不被截断)
+            if store.runState.isRunning {
+                Button(role: .destructive) {
+                    store.cancelCurrentTask()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "stop.fill")
+                            .font(.subheadline)
+                        Text(lang.text(.interruptPipeline))
+                            .font(.headline.weight(.bold))
+                        Text("⌘.")
+                            .font(.caption2.weight(.bold))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.white.opacity(0.2), in: RoundedRectangle(cornerRadius: 4))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 38)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .keyboardShortcut(".", modifiers: .command)
+                .help(lang.text(.interruptPipelineHelp))
+                .pulseOnHover(scale: 1.02, glowColor: .red)
+            } else {
+                Button {
+                    store.runPipeline()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "play.fill")
+                            .font(.subheadline)
+                        Text(lang.text(.runPipeline))
+                            .font(.headline.weight(.bold))
+                        Text("⌘↩")
+                            .font(.caption2.weight(.bold))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.white.opacity(0.2), in: RoundedRectangle(cornerRadius: 4))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 38)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.accentColor)
+                .keyboardShortcut(.return, modifiers: .command)
+                .help(lang.text(.runPipelineHelp))
+                .pulseOnHover(scale: 1.02, glowColor: .accentColor)
+            }
+        }
+        .padding(.top, 4)
     }
 }

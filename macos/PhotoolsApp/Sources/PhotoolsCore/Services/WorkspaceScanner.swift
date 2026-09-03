@@ -129,6 +129,7 @@ public struct WorkspaceScanner: Sendable {
         let inboxBakDirectory = (baseDirectory as NSString).appendingPathComponent("Inbox_bak")
 
         let assetGroups = scanAssetGroups(inboxDirectory: inboxDirectory, rawExtensions: rawExtensions)
+        let processedAssetGroups = scanAssetGroups(inboxDirectory: processedDirectory, rawExtensions: rawExtensions)
         let gpxFiles = scanGPXFiles(gpxDirectory: effectiveGPXDir)
         let processedFileCount = scanFiles(root: processedDirectory, ignoreIgnoredDirectories: false) { !$0.hasDirectoryPath }.count
         let backupFileCount = scanFiles(root: inboxBakDirectory, ignoreIgnoredDirectories: false) { !$0.hasDirectoryPath }.count
@@ -144,6 +145,7 @@ public struct WorkspaceScanner: Sendable {
             gpxFiles: gpxFiles,
             assetGroups: assetGroups,
             processedFileCount: processedFileCount,
+            processedAssetGroups: processedAssetGroups,
             backupFileCount: backupFileCount,
             logFilePath: logFilePath,
             pendingReportPath: pendingReportPath,

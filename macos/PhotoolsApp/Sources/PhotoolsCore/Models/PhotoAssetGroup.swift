@@ -99,6 +99,10 @@ public struct PhotoAssetGroup: Identifiable, Hashable, Sendable {
         return nil
     }
 
+    public var hasRaw: Bool { rawPath != nil }
+    public var hasJpg: Bool { jpgPath != nil }
+    public var hasXmp: Bool { xmpPath != nil }
+
     public var status: PhotoAssetStatus {
         if primaryPath != nil {
             return .ready

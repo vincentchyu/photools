@@ -167,9 +167,29 @@ public enum L10nKey: String, CaseIterable, Sendable {
     case filterRawOnly
     case filterJpgOnly
     case filterCompanionOnly
+    case filterHasGPS
+    case filterNoGPS
+    case copyGPSAction
+    case pasteGPSAction
+    case viewCopiedGPSAction
+    case gpsCopiedSuccess
+    case gpsPastedSuccess
+    case noGpsToCopy
+    case noCopiedGps
+    case copiedGpsInspectorTitle
+    case copiedGpsEmptyTitle
+    case copiedGpsEmptySubtitle
+    case copiedGpsCoordinates
+    case copiedGpsAltitude
+    case copiedGpsSourceInfo
+    case copiedGpsReverseGeocode
+    case copiedGpsWriteToSelected
+    case copiedGpsClear
+    case copiedGpsOpenInMaps
     case searchPlaceholder
     case emptyInbox
     case emptyFiltered
+    case filterLabel
     case emptyGpxFiles
     case processedTotalFiles
     case openInFinder
@@ -550,9 +570,29 @@ public final class LanguageManager: ObservableObject {
         .filterRawOnly: "单 RAW",
         .filterJpgOnly: "单 JPG",
         .filterCompanionOnly: "仅伴随",
+        .filterHasGPS: "包含 GPS",
+        .filterNoGPS: "缺少 GPS",
+        .copyGPSAction: "拷贝 GPS 元数据 (⌘G)",
+        .pasteGPSAction: "写入已拷贝 GPS 元数据 (⌥⌘G)",
+        .viewCopiedGPSAction: "查看已拷贝 GPS 元数据 (⌥G)",
+        .gpsCopiedSuccess: "已成功拷贝 GPS 元数据",
+        .gpsPastedSuccess: "已成功将 GPS 元数据写入配套照片",
+        .noGpsToCopy: "当前照片未包含 GPS 坐标数据",
+        .noCopiedGps: "剪贴板中无 GPS 元数据，请先按 ⌘G 拷贝",
+        .copiedGpsInspectorTitle: "已拷贝 GPS 元数据详情",
+        .copiedGpsEmptyTitle: "暂无已拷贝的 GPS 元数据",
+        .copiedGpsEmptySubtitle: "请在照片列表中选中一张带有 GPS 坐标的照片，按下 ⌘G 进行拷贝",
+        .copiedGpsCoordinates: "GPS 经纬度坐标",
+        .copiedGpsAltitude: "GPS 海拔高度",
+        .copiedGpsSourceInfo: "来源与拍摄信息",
+        .copiedGpsReverseGeocode: "逆地理位置推算",
+        .copiedGpsWriteToSelected: "一键写入当前选中照片",
+        .copiedGpsClear: "清空剪贴板",
+        .copiedGpsOpenInMaps: "在 Apple Maps 中查看",
         .searchPlaceholder: "搜索照片 (文件名、机型、地名)...",
         .emptyInbox: "Inbox 待处理目录为空",
         .emptyFiltered: "没有符合筛选条件的照片",
+        .filterLabel: "筛选:",
         .emptyGpxFiles: "未找到 GPX 轨迹文件",
         .processedTotalFiles: "已归档照片总数",
         .openInFinder: "在访达 (Finder) 中打开",
@@ -885,9 +925,29 @@ public final class LanguageManager: ObservableObject {
         .filterRawOnly: "RAW Only",
         .filterJpgOnly: "JPG Only",
         .filterCompanionOnly: "Companion",
+        .filterHasGPS: "With GPS",
+        .filterNoGPS: "Without GPS",
+        .copyGPSAction: "Copy GPS Metadata (⌘G)",
+        .pasteGPSAction: "Paste GPS Metadata (⌥⌘G)",
+        .viewCopiedGPSAction: "View Copied GPS Metadata (⌥G)",
+        .gpsCopiedSuccess: "GPS metadata copied successfully",
+        .gpsPastedSuccess: "GPS metadata written to companion photos successfully",
+        .noGpsToCopy: "Current photo does not contain GPS coordinates",
+        .noCopiedGps: "No GPS metadata in clipboard. Press ⌘G to copy first",
+        .copiedGpsInspectorTitle: "Copied GPS Metadata Inspector",
+        .copiedGpsEmptyTitle: "No Copied GPS Metadata",
+        .copiedGpsEmptySubtitle: "Select a photo with GPS coordinates and press ⌘G to copy",
+        .copiedGpsCoordinates: "GPS Coordinates",
+        .copiedGpsAltitude: "GPS Altitude",
+        .copiedGpsSourceInfo: "Source & Capture Info",
+        .copiedGpsReverseGeocode: "Reverse Geocoding Location",
+        .copiedGpsWriteToSelected: "Write to Selected Photo",
+        .copiedGpsClear: "Clear Clipboard",
+        .copiedGpsOpenInMaps: "Open in Apple Maps",
         .searchPlaceholder: "Search photos (name, camera, place)...",
         .emptyInbox: "Inbox Directory is Empty",
         .emptyFiltered: "No photos matching current filter",
+        .filterLabel: "Filter:",
         .emptyGpxFiles: "No GPX Track Files Found",
         .processedTotalFiles: "Total Archived Photos",
         .openInFinder: "Open in Finder",

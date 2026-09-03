@@ -30,7 +30,7 @@ public struct SidebarView: View {
             Section(LanguageManager.shared.text(.groupWorkflow)) {
                 sidebarRow(for: .pipeline, color: .blue)
                 sidebarRow(for: .inbox, color: .purple, badgeCount: store.summary?.readyCount)
-                sidebarRow(for: .processed, color: .indigo, badgeCount: store.summary?.processedFileCount)
+                sidebarRow(for: .processed, color: .indigo, badgeCount: store.summary?.processedAssetGroupCount)
             }
 
             Section(LanguageManager.shared.text(.groupTools)) {

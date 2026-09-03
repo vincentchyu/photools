@@ -77,12 +77,22 @@ private typealias FnCreateBackup = @convention(c) (UnsafePointer<CChar>, UnsafeP
 private typealias FnRestoreBackup = @convention(c) (UnsafePointer<CChar>, UnsafePointer<CChar>, UnsafePointer<CChar>, Int32) -> Int32
 private typealias FnCancelTask = @convention(c) () -> Void
 private typealias FnInspectPhotoMetadata = @convention(c) (UnsafePointer<CChar>) -> UnsafePointer<CChar>?
+private typealias FnWritePhotoGPSMetadata = @convention(c) (
+    UnsafePointer<CChar>?,
+    UnsafePointer<CChar>,
+    Double,
+    Double,
+    Double,
+    UnsafePointer<CChar>?,
+    UnsafePointer<CChar>?
+) -> Int32
 private typealias FnSetLanguage = @convention(c) (UnsafePointer<CChar>?) -> Void
 private typealias FnSavePreferences = @convention(c) (UnsafePointer<CChar>?) -> Int32
 private typealias FnGetGlobalConfigJSON = @convention(c) () -> UnsafePointer<CChar>?
 private typealias FnGetPluginMetasJSON = @convention(c) () -> UnsafePointer<CChar>?
 private typealias FnGetGlobalOptionSpecsJSON = @convention(c) () -> UnsafePointer<CChar>?
 private typealias FnShutdown = @convention(c) () -> Void
+private typealias FnGetLastErrorMessage = @convention(c) () -> UnsafePointer<CChar>?
 private typealias FnFreeString = @convention(c) (UnsafePointer<CChar>?) -> Void
 
 // MARK: - Swift 回调保持器
@@ -114,12 +124,14 @@ public final class PhotoolsEngine: @unchecked Sendable {
     private var fnRestoreBackup: FnRestoreBackup?
     private var fnCancelTask: FnCancelTask?
     private var fnInspectPhotoMetadata: FnInspectPhotoMetadata?
+    private var fnWritePhotoGPSMetadata: FnWritePhotoGPSMetadata?
     private var fnSetLanguage: FnSetLanguage?
     private var fnSavePreferences: FnSavePreferences?
     private var fnGetGlobalConfigJSON: FnGetGlobalConfigJSON?
     private var fnGetPluginMetasJSON: FnGetPluginMetasJSON?
     private var fnGetGlobalOptionSpecsJSON: FnGetGlobalOptionSpecsJSON?
     private var fnShutdown: FnShutdown?
+    private var fnGetLastErrorMessage: FnGetLastErrorMessage?
     private var fnFreeString: FnFreeString?
 
     public private(set) var isLoaded: Bool = false
@@ -198,6 +210,9 @@ public final class PhotoolsEngine: @unchecked Sendable {
         if let sym = dlsym(handle, "Photools_InspectPhotoMetadata") {
             fnInspectPhotoMetadata = unsafeBitCast(sym, to: FnInspectPhotoMetadata.self)
         }
+        if let sym = dlsym(handle, "Photools_WritePhotoGPSMetadata") {
+            fnWritePhotoGPSMetadata = unsafeBitCast(sym, to: FnWritePhotoGPSMetadata.self)
+        }
         if let sym = dlsym(handle, "Photools_SetLanguage") {
             fnSetLanguage = unsafeBitCast(sym, to: FnSetLanguage.self)
         }
@@ -215,6 +230,9 @@ public final class PhotoolsEngine: @unchecked Sendable {
         }
         if let sym = dlsym(handle, "Photools_Shutdown") {
             fnShutdown = unsafeBitCast(sym, to: FnShutdown.self)
+        }
+        if let sym = dlsym(handle, "Photools_GetLastErrorMessage") {
+            fnGetLastErrorMessage = unsafeBitCast(sym, to: FnGetLastErrorMessage.self)
         }
         if let sym = dlsym(handle, "Photools_FreeString") {
             fnFreeString = unsafeBitCast(sym, to: FnFreeString.self)
@@ -573,7 +591,57 @@ public final class PhotoolsEngine: @unchecked Sendable {
         return String(cString: ptr)
     }
 
-    // 16. 安全退出并回收全部常驻子进程资源
+    // 16. 直接向照片及伴随文件写入/克隆全量 GPS 坐标与溯源指纹
+    public func writePhotoGPSMetadata(
+        sourcePath: String? = nil,
+        targetPath: String,
+        latitude: Double,
+        longitude: Double,
+        altitude: Double = 0.0,
+        provenanceJSON: String? = nil,
+        sidecarPolicy: String = "smart"
+    ) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let fn = fnWritePhotoGPSMetadata else { return false }
+
+        let invokeWithPointers: (UnsafePointer<CChar>?, UnsafePointer<CChar>) -> Bool = { cSrc, cTgt in
+            let res: Int32
+            if let prov = provenanceJSON {
+                res = prov.withCString { cProv in
+                    sidecarPolicy.withCString { cPolicy in
+                        fn(cSrc, cTgt, latitude, longitude, altitude, cProv, cPolicy)
+                    }
+                }
+            } else {
+                res = sidecarPolicy.withCString { cPolicy in
+                    fn(cSrc, cTgt, latitude, longitude, altitude, nil, cPolicy)
+                }
+            }
+            return res == 0
+        }
+
+        return targetPath.withCString { cTgt in
+            if let src = sourcePath {
+                return src.withCString { cSrc in
+                    invokeWithPointers(cSrc, cTgt)
+                }
+            } else {
+                return invokeWithPointers(nil, cTgt)
+            }
+        }
+    }
+
+    // 17. 获取 Go 端最新发生的底层错误详细描述
+    public func getLastErrorMessage() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let fn = fnGetLastErrorMessage, let ptr = fn() else { return nil }
+        defer { fnFreeString?(ptr) }
+        return String(cString: ptr)
+    }
+
+    // 18. 安全退出并回收全部常驻子进程资源
     public func shutdown() {
         lock.lock()
         defer { lock.unlock() }

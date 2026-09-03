@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
 	"github.com/vincentchyu/photools/common"
 	"github.com/vincentchyu/photools/internal/config"
 	"github.com/vincentchyu/photools/internal/domain"
@@ -92,7 +93,9 @@ func (m Model) viewInitializing() string {
 		var percent float64 = -1
 
 		if !has {
-			statusBadge = lipgloss.NewStyle().Background(lipgloss.Color("#334155")).Foreground(MutedTextColor).Padding(0, 1).Render(i18n.T("tuiInitWaitingBadge"))
+			statusBadge = lipgloss.NewStyle().Background(lipgloss.Color("#334155")).Foreground(MutedTextColor).Padding(
+				0, 1,
+			).Render(i18n.T("tuiInitWaitingBadge"))
 			detailLine = i18n.T("tuiInitWaitingDetail")
 		} else {
 			percent = report.Percent
@@ -158,7 +161,26 @@ func (m Model) viewMenu() string {
 	if m.flatMode {
 		flatBadge = " " + BadgeWarning.Render(i18n.T("tuiMenuFlatBadge"))
 	}
-	b.WriteString(StatusLabel.Render(i18n.T("tuiMenuWorkspaceLabel")) + StatusPath.Render(m.currentBaseDir) + flatBadge + "\n")
+	var policyBadge string
+	switch m.sidecarPolicy {
+	case domain.PolicySidecarOnly:
+		policyBadge = " " + lipgloss.NewStyle().Background(lipgloss.Color("#1e3a8a")).Foreground(lipgloss.Color("#93c5fd")).Bold(true).Padding(
+			0, 1,
+		).Render("🛡️ "+i18n.T("policySidecarOnly"))
+	case domain.PolicyEmbedAndSidecar:
+		policyBadge = " " + lipgloss.NewStyle().Background(lipgloss.Color("#581c87")).Foreground(lipgloss.Color("#d8b4fe")).Bold(true).Padding(
+			0, 1,
+		).Render("📝 "+i18n.T("policyEmbedAndSidecar"))
+	case domain.PolicyEmbedOnly:
+		policyBadge = " " + lipgloss.NewStyle().Background(lipgloss.Color("#7c2d12")).Foreground(lipgloss.Color("#fdba74")).Bold(true).Padding(
+			0, 1,
+		).Render("⚠️ "+i18n.T("policyEmbedOnly"))
+	default:
+		policyBadge = " " + lipgloss.NewStyle().Background(lipgloss.Color("#065f46")).Foreground(lipgloss.Color("#6ee7b7")).Bold(true).Padding(
+			0, 1,
+		).Render("🌟 "+i18n.T("policySmart"))
+	}
+	b.WriteString(StatusLabel.Render(i18n.T("tuiMenuWorkspaceLabel")) + StatusPath.Render(m.currentBaseDir) + flatBadge + policyBadge + "\n")
 
 	statusBadges := fmt.Sprintf(
 		i18n.T("tuiMenuStatusBadges"),
@@ -270,7 +292,9 @@ func (m Model) viewMenu() string {
 			phaseIdx := priMap[priority]
 			priorityBadge = BadgeInfo.Render(fmt.Sprintf(i18n.T("tuiMenuPhaseBadge"), priority, phaseIdx))
 		} else {
-			priorityBadge = lipgloss.NewStyle().Background(lipgloss.Color("#334155")).Foreground(MutedTextColor).Padding(0, 1).Render(fmt.Sprintf(i18n.T("tuiMenuInactiveBadge"), priority))
+			priorityBadge = lipgloss.NewStyle().Background(lipgloss.Color("#334155")).Foreground(MutedTextColor).Padding(
+				0, 1,
+			).Render(fmt.Sprintf(i18n.T("tuiMenuInactiveBadge"), priority))
 		}
 
 		// 自检信息与健康状态行
@@ -297,20 +321,28 @@ func (m Model) viewMenu() string {
 		if initStatusLine != "" {
 			if isFocused {
 				cardText = fmt.Sprintf(
-					"▶ %s %s %s%s\n    %s\n    └─ %s %s", checkMark, priorityBadge, item.Title(), paramBadge, initStatusLine,
+					"▶ %s %s %s%s\n    %s\n    └─ %s %s", checkMark, priorityBadge, item.Title(), paramBadge,
+					initStatusLine,
 					descPrefix, item.Desc(),
 				)
 			} else {
 				cardText = fmt.Sprintf(
-					"  %s %s %s%s\n    %s\n    └─ %s %s", checkMark, priorityBadge, item.Title(), paramBadge, initStatusLine,
+					"  %s %s %s%s\n    %s\n    └─ %s %s", checkMark, priorityBadge, item.Title(), paramBadge,
+					initStatusLine,
 					descPrefix, item.Desc(),
 				)
 			}
 		} else {
 			if isFocused {
-				cardText = fmt.Sprintf("▶ %s %s %s%s\n    └─ %s %s", checkMark, priorityBadge, item.Title(), paramBadge, descPrefix, item.Desc())
+				cardText = fmt.Sprintf(
+					"▶ %s %s %s%s\n    └─ %s %s", checkMark, priorityBadge, item.Title(), paramBadge, descPrefix,
+					item.Desc(),
+				)
 			} else {
-				cardText = fmt.Sprintf("  %s %s %s%s\n    └─ %s %s", checkMark, priorityBadge, item.Title(), paramBadge, descPrefix, item.Desc())
+				cardText = fmt.Sprintf(
+					"  %s %s %s%s\n    └─ %s %s", checkMark, priorityBadge, item.Title(), paramBadge, descPrefix,
+					item.Desc(),
+				)
 			}
 		}
 

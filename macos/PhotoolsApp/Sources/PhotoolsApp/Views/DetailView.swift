@@ -26,7 +26,11 @@ public struct DetailView: View {
                 }
 
             case .processed:
-                processedInspectorView
+                if let asset = store.selectedAsset {
+                    PhotoExifInspectorView(store: store, asset: asset, isArchivedFrozen: true)
+                } else {
+                    processedInspectorView
+                }
 
             case .geodata:
                 GeodataTestDetailView(store: store)
@@ -53,9 +57,14 @@ public struct DetailView: View {
                 Text(lang.text(.processedArchiveCount))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("\(store.summary?.processedFileCount ?? 0)")
-                    .font(.system(size: 36, weight: .bold, design: .rounded))
-                    .foregroundStyle(.indigo)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("\(store.summary?.processedAssetGroupCount ?? 0)")
+                        .font(.system(size: 36, weight: .bold, design: .rounded))
+                        .foregroundStyle(.indigo)
+                    Text("组照片 (\(store.summary?.processedFileCount ?? 0) 个物理文件)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
                 if let path = store.summary?.processedDirectory {
                     Text(path)

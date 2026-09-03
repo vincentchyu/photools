@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import PhotoolsCore
+import QuickLookUI
 import SwiftUI
 
 public enum WorkspaceSection: Hashable, CaseIterable, Identifiable, Sendable {
@@ -108,7 +109,13 @@ public final class WorkspaceStore: ObservableObject {
         }
     }
     @Published public var inPlace: Bool
-    @Published public var sidecarPolicy: String
+    @Published public var sidecarPolicy: String {
+        didSet {
+            if sidecarPolicy != oldValue {
+                persistPreferences()
+            }
+        }
+    }
     @Published public var companionExtensions: String
     @Published public var gpxDirectory: String
     @Published public var logDirectory: String
@@ -135,9 +142,40 @@ public final class WorkspaceStore: ObservableObject {
     @Published public private(set) var currentStageIndex: Int = -1
     @Published public private(set) var liveLog: String = ""
     @Published public var selectedSection: WorkspaceSection = .pipeline
+    // QuickLook 快速预览状态 (按空格键唤起/关闭，切换选中照片时自动联动刷新)
+    @Published public var quickLookURL: URL?
+
     @Published public var selectedAssetID: PhotoAssetGroup.ID? {
         didSet {
             loadExifForSelectedAsset()
+            if quickLookURL != nil {
+                if let asset = selectedAsset {
+                    if let jpg = asset.jpgPath {
+                        quickLookURL = URL(fileURLWithPath: jpg)
+                    } else if let primary = asset.primaryPath {
+                        quickLookURL = URL(fileURLWithPath: primary)
+                    }
+                } else {
+                    quickLookURL = nil
+                }
+                if QLPreviewPanel.sharedPreviewPanelExists() && QLPreviewPanel.shared().isVisible {
+                    QLPreviewPanel.shared().reloadData()
+                }
+            }
+        }
+    }
+
+    /// 空格键触发/切换 QuickLook 快速预览
+    public func toggleQuickLookForSelectedAsset() {
+        guard let asset = selectedAsset else { return }
+        if quickLookURL != nil {
+            quickLookURL = nil
+        } else {
+            if let jpg = asset.jpgPath {
+                quickLookURL = URL(fileURLWithPath: jpg)
+            } else if let primary = asset.primaryPath {
+                quickLookURL = URL(fileURLWithPath: primary)
+            }
         }
     }
 
@@ -156,6 +194,14 @@ public final class WorkspaceStore: ObservableObject {
     @Published public private(set) var isExifLoading: Bool = false
     private var exifLoadTask: Task<Void, Never>?
 
+    // GPS 快速标记与剪贴板 (⌘G / ⌥⌘G / ⌥G)
+    @Published public private(set) var copiedGPSMetadata: CopiedGPSMetadata?
+    @Published public var assetGPSMap: [PhotoAssetGroup.ID: Bool] = [:]
+    @Published public var hudMessage: String?
+    @Published public var showingCopiedGPSInspector: Bool = false
+    private var hudDismissTask: Task<Void, Never>?
+    private var gpsScanTask: Task<Void, Never>?
+
     // 离线地理数据包管理与反查测试
     @Published public private(set) var continentPacks: [GeodataContinentPack] = []
     @Published public private(set) var isGeodataLoading: Bool = false
@@ -169,6 +215,14 @@ public final class WorkspaceStore: ObservableObject {
 
     // 使用指南与设计文档
     @Published public var selectedGuideDoc: GuideDocItem = GuideDocItem.allDocs.first!
+
+    // 已归档照片目录层级下探与平铺状态
+    @Published public var processedCurrentSubdir: String = ""
+    @Published public var processedIsFlatRecursive: Bool {
+        didSet {
+            UserDefaults.standard.set(processedIsFlatRecursive, forKey: "processedIsFlatRecursive")
+        }
+    }
 
     private let scanner: WorkspaceScanner
     private let engine: PhotoolsEngine
@@ -268,6 +322,7 @@ public final class WorkspaceStore: ObservableObject {
         self.allowNoGPS = UserDefaults.standard.bool(forKey: "allowNoGPS")
         self.enableArchive = UserDefaults.standard.object(forKey: "enableArchive") != nil ? UserDefaults.standard.bool(forKey: "enableArchive") : true
         self.testBackup = UserDefaults.standard.bool(forKey: "testBackup")
+        self.processedIsFlatRecursive = UserDefaults.standard.bool(forKey: "processedIsFlatRecursive")
 
         // 启动瞬间执行进程内自检与插件预热
         warmupInProcessEngine()
@@ -349,9 +404,15 @@ public final class WorkspaceStore: ObservableObject {
 
     public var selectedAsset: PhotoAssetGroup? {
         guard let selectedAssetID else {
+            if selectedSection == .processed {
+                return processedCurrentAssets.first
+            }
             return summary?.assetGroups.first
         }
-        return summary?.assetGroups.first { $0.id == selectedAssetID }
+        if let inboxMatch = summary?.assetGroups.first(where: { $0.id == selectedAssetID }) {
+            return inboxMatch
+        }
+        return summary?.processedAssetGroups.first(where: { $0.id == selectedAssetID })
     }
 
     public var photoolsExecutablePath: String {
@@ -372,6 +433,7 @@ public final class WorkspaceStore: ObservableObject {
                 let meta = try await self.exifReader.readMetadata(for: path)
                 guard !Task.isCancelled else { return }
                 self.selectedAssetExif = meta
+                self.assetGPSMap[asset.id] = meta.hasGPS
                 self.isExifLoading = false
             } catch {
                 guard !Task.isCancelled else { return }
@@ -476,10 +538,184 @@ public final class WorkspaceStore: ObservableObject {
             } else {
                 loadExifForSelectedAsset()
             }
+            scanAssetGPSStatuses()
         } catch {
             appendLog("⚠️ 扫描工作区失败：\(error.localizedDescription)")
             summary = nil
         }
+    }
+
+    public func scanAssetGPSStatuses() {
+        guard let assets = summary?.assetGroups, !assets.isEmpty else { return }
+        gpsScanTask?.cancel()
+        gpsScanTask = Task { [weak self] in
+            guard let self else { return }
+            for asset in assets {
+                if Task.isCancelled { break }
+                if self.assetGPSMap[asset.id] != nil { continue }
+                guard let path = asset.primaryPath else { continue }
+                if let meta = try? await self.exifReader.readMetadata(for: path) {
+                    if !Task.isCancelled {
+                        self.assetGPSMap[asset.id] = meta.hasGPS
+                    }
+                }
+            }
+        }
+    }
+
+    // 全局 HUD 浮层提示与自动淡出
+    public func showHUD(_ message: String) {
+        hudDismissTask?.cancel()
+        self.hudMessage = message
+        hudDismissTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled else { return }
+            self?.hudMessage = nil
+        }
+    }
+
+    // 快捷键 ⌘G: 快速拷贝当前选中照片的全部 GPS 元数据
+    public func copySelectedAssetGPS() {
+        guard let asset = selectedAsset else {
+            showHUD(LanguageManager.shared.text(.noPhotoSelectedTitle))
+            return
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            let meta: ExifMetadata?
+            if let cached = self.selectedAssetExif, cached.filePath == asset.primaryPath {
+                meta = cached
+            } else if let path = asset.primaryPath {
+                meta = try? await self.exifReader.readMetadata(for: path)
+            } else {
+                meta = nil
+            }
+
+            guard let meta, meta.hasGPS, let lat = meta.latitude, let lon = meta.longitude else {
+                self.showHUD(LanguageManager.shared.text(.noGpsToCopy))
+                return
+            }
+
+            // 提取源照片上所有包含 GPS 的原始键值对
+            var extractedGPSTags: [String: String] = [:]
+            for item in meta.rawTags {
+                if item.tag.localizedCaseInsensitiveContains("GPS") || item.group.localizedCaseInsensitiveContains("GPS") {
+                    extractedGPSTags[item.tag] = item.value
+                }
+            }
+            if extractedGPSTags["GPSLatitude"] == nil {
+                extractedGPSTags["GPSLatitude"] = String(format: "%.6f°", abs(lat)) + (lat >= 0 ? " N" : " S")
+            }
+            if extractedGPSTags["GPSLongitude"] == nil {
+                extractedGPSTags["GPSLongitude"] = String(format: "%.6f°", abs(lon)) + (lon >= 0 ? " E" : " W")
+            }
+            if extractedGPSTags["GPSLatitudeRef"] == nil {
+                extractedGPSTags["GPSLatitudeRef"] = lat >= 0 ? "North" : "South"
+            }
+            if extractedGPSTags["GPSLongitudeRef"] == nil {
+                extractedGPSTags["GPSLongitudeRef"] = lon >= 0 ? "East" : "West"
+            }
+            if extractedGPSTags["GPSPosition"] == nil, let pos = meta.gpsPosition {
+                extractedGPSTags["GPSPosition"] = pos
+            }
+            if extractedGPSTags["GPSAltitude"] == nil, let alt = meta.altitude {
+                extractedGPSTags["GPSAltitude"] = String(format: "%.1f m", alt)
+            }
+            if extractedGPSTags["GPSVersionID"] == nil {
+                extractedGPSTags["GPSVersionID"] = "2.3.0.0"
+            }
+            if extractedGPSTags["GPSMapDatum"] == nil {
+                extractedGPSTags["GPSMapDatum"] = "WGS-84"
+            }
+
+            let copied = CopiedGPSMetadata(
+                latitude: lat,
+                longitude: lon,
+                altitude: meta.altitude,
+                sourceAssetBaseName: asset.baseName,
+                sourceFilePath: asset.primaryPath ?? "",
+                captureDate: meta.dateTimeOriginal,
+                gpsSource: meta.gpsSource,
+                gpsMatchMethod: meta.gpsMatchMethod,
+                locationSummary: meta.locationSummary,
+                country: meta.country,
+                province: meta.province,
+                city: meta.city,
+                district: meta.district,
+                rawGPSTags: extractedGPSTags
+            )
+
+            self.copiedGPSMetadata = copied
+
+            // 写入系统剪贴板 (纯文本格式)
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(copied.plainTextSummary, forType: .string)
+
+            self.showHUD("\(LanguageManager.shared.text(.gpsCopiedSuccess)) (\(copied.formattedDecimal)) [\(extractedGPSTags.count) 项]")
+        }
+    }
+
+    // 快捷键 ⌥⌘G: 把已拷贝的 GPS 写入到目标照片及其配套文件
+    public func pasteGPSToSelectedAsset() {
+        guard let copied = copiedGPSMetadata else {
+            showHUD(LanguageManager.shared.text(.noCopiedGps))
+            return
+        }
+
+        guard let asset = selectedAsset, let primaryPath = asset.primaryPath else {
+            showHUD(LanguageManager.shared.text(.noPhotoSelectedTitle))
+            return
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            let provDict: [String: String] = [
+                "source": "manual_copied",
+                "processor": "photools-desktop",
+                "match_method": "clipboard_paste",
+                "timestamp": ISO8601DateFormatter().string(from: Date())
+            ]
+            let provJSON = (try? JSONSerialization.data(withJSONObject: provDict)).flatMap { String(data: $0, encoding: .utf8) }
+
+            let ok = self.engine.writePhotoGPSMetadata(
+                sourcePath: copied.sourceFilePath,
+                targetPath: primaryPath,
+                latitude: copied.latitude,
+                longitude: copied.longitude,
+                altitude: copied.altitude ?? 0.0,
+                provenanceJSON: provJSON,
+                sidecarPolicy: self.sidecarPolicy
+            )
+
+            if ok {
+                self.assetGPSMap[asset.id] = true
+                self.loadExifForSelectedAsset()
+                let policyTag: String
+                switch self.sidecarPolicy {
+                case "smart": policyTag = "智能模式 (RAW+JPG+XMP)"
+                case "sidecar_only": policyTag = "纯侧车模式 (仅XMP)"
+                case "embed_only": policyTag = "纯内嵌模式 (RAW+JPG)"
+                default: policyTag = "双写模式 (原图+XMP)"
+                }
+                self.appendLog("✅ [\(policyTag)] 成功将 GPS 写入资产: \(asset.baseName)")
+                self.showHUD("✅ 已按[\(policyTag)]写入: \(asset.baseName)")
+            } else {
+                let reason = self.engine.getLastErrorMessage() ?? "写入校验未通过"
+                self.appendLog("❌ 写入 GPS 失败 [\(asset.baseName)]: \(reason)")
+                self.showHUD("⚠️ 写入失败: \(reason)")
+            }
+        }
+    }
+
+    // 快捷键 ⌥G: 打开已拷贝 GPS 渲染预览窗口
+    public func showCopiedGPSInspector() {
+        self.showingCopiedGPSInspector = true
+    }
+
+    public func clearCopiedGPS() {
+        self.copiedGPSMetadata = nil
     }
 
     public func setBaseDirectoryAndResetPaths(_ path: String) {
@@ -999,5 +1235,165 @@ public final class WorkspaceStore: ObservableObject {
             .components(separatedBy: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
             .filter { !$0.isEmpty }
+    }
+
+    // MARK: - Sidecar Policy Helper 属性 (供状态栏、工具栏与仪表盘复用)
+    public var sidecarPolicyTitle: String {
+        switch sidecarPolicy {
+        case "sidecar_only":
+            return LanguageManager.shared.text(.policySidecarOnly)
+        case "embed_and_sidecar":
+            return LanguageManager.shared.text(.policyEmbedAndSidecar)
+        case "embed_only":
+            return LanguageManager.shared.text(.policyEmbedOnly)
+        default:
+            return LanguageManager.shared.text(.policySmart)
+        }
+    }
+
+    public var sidecarPolicyDescription: String {
+        switch sidecarPolicy {
+        case "sidecar_only":
+            return LanguageManager.shared.text(.policySidecarOnlyDesc)
+        case "embed_and_sidecar":
+            return LanguageManager.shared.text(.policyEmbedAndSidecarDesc)
+        case "embed_only":
+            return LanguageManager.shared.text(.policyEmbedOnlyDesc)
+        default:
+            return LanguageManager.shared.text(.policySmartDesc)
+        }
+    }
+
+    public var sidecarPolicyIcon: String {
+        switch sidecarPolicy {
+        case "sidecar_only":
+            return "shield.lefthalf.filled"
+        case "embed_and_sidecar":
+            return "doc.on.doc.fill"
+        case "embed_only":
+            return "square.and.pencil"
+        default:
+            return "sparkles"
+        }
+    }
+
+    public var sidecarPolicyColor: Color {
+        switch sidecarPolicy {
+        case "sidecar_only":
+            return .blue
+        case "embed_and_sidecar":
+            return .purple
+        case "embed_only":
+            return .orange
+        default:
+            return .green
+        }
+    }
+
+    // MARK: - 已归档照片资产与目录层级导航
+    public var processedAllAssets: [PhotoAssetGroup] {
+        summary?.processedAssetGroups ?? []
+    }
+
+    /// 面包屑导航各层级路径段
+    public var processedBreadcrumbs: [String] {
+        processedCurrentSubdir
+            .split(separator: "/")
+            .map(String.init)
+            .filter { !$0.isEmpty }
+    }
+
+    /// 当前层级下的直接子文件夹列表（含下属照片数聚合，按名称倒序排列）
+    public var processedDrillDownFolders: [ProcessedFolderItem] {
+        guard !processedIsFlatRecursive else { return [] }
+        let all = processedAllAssets
+        guard let procDir = summary?.processedDirectory, !procDir.isEmpty else { return [] }
+
+        var folderCounts: [String: Int] = [:]
+        let targetPrefix = processedCurrentSubdir.isEmpty ? "" : processedCurrentSubdir + "/"
+
+        for asset in all {
+            let dir = asset.directory
+            guard dir.hasPrefix(procDir) else { continue }
+            var rel = String(dir.dropFirst(procDir.count))
+            if rel.hasPrefix("/") {
+                rel.removeFirst()
+            }
+
+            if targetPrefix.isEmpty {
+                let parts = rel.split(separator: "/")
+                if let first = parts.first {
+                    folderCounts[String(first), default: 0] += 1
+                }
+            } else if rel.hasPrefix(targetPrefix) {
+                let subRel = String(rel.dropFirst(targetPrefix.count))
+                let parts = subRel.split(separator: "/")
+                if let first = parts.first {
+                    folderCounts[String(first), default: 0] += 1
+                }
+            }
+        }
+
+        return folderCounts.map { name, count in
+            let path = targetPrefix.isEmpty ? name : "\(targetPrefix)\(name)"
+            return ProcessedFolderItem(name: name, relativePath: path, photoCount: count)
+        }
+        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedDescending }
+    }
+
+    /// 当前应该展示的照片组（平铺时返回全部，层级下探时仅返回当前目录直接包含的照片）
+    public var processedCurrentAssets: [PhotoAssetGroup] {
+        let all = processedAllAssets
+        if processedIsFlatRecursive {
+            return all
+        }
+        guard let procDir = summary?.processedDirectory, !procDir.isEmpty else { return [] }
+
+        return all.filter { asset in
+            let dir = asset.directory
+            guard dir.hasPrefix(procDir) else { return false }
+            var rel = String(dir.dropFirst(procDir.count))
+            if rel.hasPrefix("/") {
+                rel.removeFirst()
+            }
+            return rel == processedCurrentSubdir
+        }
+    }
+
+    /// 进入子文件夹
+    public func enterProcessedFolder(_ folderRelativePath: String) {
+        processedCurrentSubdir = folderRelativePath
+        selectedAssetID = processedCurrentAssets.first?.id
+    }
+
+    /// 面包屑导航跳转
+    public func navigateToProcessedBreadcrumb(at index: Int) {
+        let crumbs = processedBreadcrumbs
+        if index < 0 || index >= crumbs.count {
+            processedCurrentSubdir = ""
+        } else {
+            let selected = crumbs[0...index]
+            processedCurrentSubdir = selected.joined(separator: "/")
+        }
+        selectedAssetID = processedCurrentAssets.first?.id
+    }
+
+    /// 重置为 Processed 根目录
+    public func resetProcessedNavigation() {
+        processedCurrentSubdir = ""
+        selectedAssetID = processedCurrentAssets.first?.id
+    }
+}
+
+public struct ProcessedFolderItem: Identifiable, Hashable, Sendable {
+    public var id: String { relativePath }
+    public let name: String
+    public let relativePath: String
+    public let photoCount: Int
+
+    public init(name: String, relativePath: String, photoCount: Int) {
+        self.name = name
+        self.relativePath = relativePath
+        self.photoCount = photoCount
     }
 }

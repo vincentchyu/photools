@@ -3,6 +3,7 @@ package exiftool
 import (
 	"errors"
 	"math"
+	"os"
 	"strings"
 	"testing"
 
@@ -24,54 +25,61 @@ func (m *mockCommandRunner) CombinedOutput(name string, args ...string) ([]byte,
 }
 
 func TestReadMetadata(t *testing.T) {
-	t.Run("成功读取元数据", func(t *testing.T) {
-		jsonOutput := []byte(`[{
+	t.Run(
+		"成功读取元数据", func(t *testing.T) {
+			jsonOutput := []byte(`[{
 			"DateTimeOriginal": "2026:08:23 15:30:00",
 			"OffsetTimeOriginal": "+08:00",
 			"GPSPosition": "39 deg 54' 15.00\" N, 116 deg 23' 30.00\" E",
 			"GPSDateTime": "2026:08:23 07:30:00Z"
 		}]`)
-		runner := &mockCommandRunner{output: jsonOutput}
+			runner := &mockCommandRunner{output: jsonOutput}
 
-		meta, err := ReadMetadata(runner, "/path/to/photo.jpg")
-		if err != nil {
-			t.Fatalf("ReadMetadata 期望成功，得到错误: %v", err)
-		}
+			meta, err := ReadMetadata(runner, "/path/to/photo.jpg")
+			if err != nil {
+				t.Fatalf("ReadMetadata 期望成功，得到错误: %v", err)
+			}
 
-		if meta.DateTimeOriginal != "2026:08:23 15:30:00" {
-			t.Errorf("DateTimeOriginal 不匹配: %s", meta.DateTimeOriginal)
-		}
-		if meta.OffsetTimeOriginal != "+08:00" {
-			t.Errorf("OffsetTimeOriginal 不匹配: %s", meta.OffsetTimeOriginal)
-		}
-		if meta.GPSPosition != `39 deg 54' 15.00" N, 116 deg 23' 30.00" E` {
-			t.Errorf("GPSPosition 不匹配: %s", meta.GPSPosition)
-		}
-	})
+			if meta.DateTimeOriginal != "2026:08:23 15:30:00" {
+				t.Errorf("DateTimeOriginal 不匹配: %s", meta.DateTimeOriginal)
+			}
+			if meta.OffsetTimeOriginal != "+08:00" {
+				t.Errorf("OffsetTimeOriginal 不匹配: %s", meta.OffsetTimeOriginal)
+			}
+			if meta.GPSPosition != `39 deg 54' 15.00" N, 116 deg 23' 30.00" E` {
+				t.Errorf("GPSPosition 不匹配: %s", meta.GPSPosition)
+			}
+		},
+	)
 
-	t.Run("ExifTool 执行失败报错", func(t *testing.T) {
-		runner := &mockCommandRunner{err: errors.New("command not found")}
-		_, err := ReadMetadata(runner, "/path/to/photo.jpg")
-		if err == nil {
-			t.Fatal("期望返回错误，但返回 nil")
-		}
-	})
+	t.Run(
+		"ExifTool 执行失败报错", func(t *testing.T) {
+			runner := &mockCommandRunner{err: errors.New("command not found")}
+			_, err := ReadMetadata(runner, "/path/to/photo.jpg")
+			if err == nil {
+				t.Fatal("期望返回错误，但返回 nil")
+			}
+		},
+	)
 }
 
 func TestReadBatchMetadataMap(t *testing.T) {
-	t.Run("空切片直接返回空 map", func(t *testing.T) {
-		runner := &mockCommandRunner{}
-		res, err := ReadBatchMetadataMap(runner, nil)
-		if err != nil {
-			t.Fatalf("ReadBatchMetadataMap(nil) 出错: %v", err)
-		}
-		if len(res) != 0 {
-			t.Errorf("期望空 map，实际长度 %d", len(res))
-		}
-	})
+	t.Run(
+		"空切片直接返回空 map", func(t *testing.T) {
+			runner := &mockCommandRunner{}
+			res, err := ReadBatchMetadataMap(runner, nil)
+			if err != nil {
+				t.Fatalf("ReadBatchMetadataMap(nil) 出错: %v", err)
+			}
+			if len(res) != 0 {
+				t.Errorf("期望空 map，实际长度 %d", len(res))
+			}
+		},
+	)
 
-	t.Run("批量成功读取与路径匹配", func(t *testing.T) {
-		jsonOutput := []byte(`[
+	t.Run(
+		"批量成功读取与路径匹配", func(t *testing.T) {
+			jsonOutput := []byte(`[
 			{
 				"SourceFile": "/path/to/photo1.jpg",
 				"DateTimeOriginal": "2026:08:23 15:30:00",
@@ -83,71 +91,82 @@ func TestReadBatchMetadataMap(t *testing.T) {
 				"GPSPosition": "39 deg 54' 16.00\" N, 116 deg 23' 31.00\" E"
 			}
 		]`)
-		runner := &mockCommandRunner{output: jsonOutput}
-		paths := []string{"/path/to/photo1.jpg", "/path/to/photo2.NEF"}
+			runner := &mockCommandRunner{output: jsonOutput}
+			paths := []string{"/path/to/photo1.jpg", "/path/to/photo2.NEF"}
 
-		res, err := ReadBatchMetadataMap(runner, paths)
-		if err != nil {
-			t.Fatalf("ReadBatchMetadataMap 报错: %v", err)
-		}
-		if len(res) != 2 {
-			t.Fatalf("期望返回 2 条记录，实际返回 %d", len(res))
-		}
-		if res["/path/to/photo1.jpg"].DateTimeOriginal != "2026:08:23 15:30:00" {
-			t.Errorf("photo1 时间不匹配: %s", res["/path/to/photo1.jpg"].DateTimeOriginal)
-		}
-		if res["/path/to/photo2.NEF"].DateTimeOriginal != "2026:08:23 15:31:00" {
-			t.Errorf("photo2 时间不匹配: %s", res["/path/to/photo2.NEF"].DateTimeOriginal)
-		}
-	})
+			res, err := ReadBatchMetadataMap(runner, paths)
+			if err != nil {
+				t.Fatalf("ReadBatchMetadataMap 报错: %v", err)
+			}
+			if len(res) != 2 {
+				t.Fatalf("期望返回 2 条记录，实际返回 %d", len(res))
+			}
+			if res["/path/to/photo1.jpg"].DateTimeOriginal != "2026:08:23 15:30:00" {
+				t.Errorf("photo1 时间不匹配: %s", res["/path/to/photo1.jpg"].DateTimeOriginal)
+			}
+			if res["/path/to/photo2.NEF"].DateTimeOriginal != "2026:08:23 15:31:00" {
+				t.Errorf("photo2 时间不匹配: %s", res["/path/to/photo2.NEF"].DateTimeOriginal)
+			}
+		},
+	)
 }
 
 func TestParseBatchMetadataJSON(t *testing.T) {
-	t.Run("空切片返回空切片", func(t *testing.T) {
-		res, err := ParseBatchMetadataJSON([]byte(`[]`))
-		if err != nil {
-			t.Fatalf("期望正常解析空切片，实际报错: %v", err)
-		}
-		if len(res) != 0 {
-			t.Errorf("期望长度 0，实际长度 %d", len(res))
-		}
-	})
+	t.Run(
+		"空切片返回空切片", func(t *testing.T) {
+			res, err := ParseBatchMetadataJSON([]byte(`[]`))
+			if err != nil {
+				t.Fatalf("期望正常解析空切片，实际报错: %v", err)
+			}
+			if len(res) != 0 {
+				t.Errorf("期望长度 0，实际长度 %d", len(res))
+			}
+		},
+	)
 
-	t.Run("包含 Warning 干扰前缀时自动剥离成功解析", func(t *testing.T) {
-		warningOutput := []byte("Warning: [minor] Fixed incorrect URI for schema\n" +
-			"Warning: [minor] Non-standard format string\n" +
-			`[{"SourceFile":"/path/to/img.nef","DateTimeOriginal":"2026:08:24 10:00:00"}]`)
-		res, err := ParseBatchMetadataJSON(warningOutput)
-		if err != nil {
-			t.Fatalf("带 Warning 前缀应成功解析，实际报错: %v", err)
-		}
-		if len(res) != 1 || res[0].DateTimeOriginal != "2026:08:24 10:00:00" {
-			t.Errorf("解析结果不匹配: %+v", res)
-		}
-	})
+	t.Run(
+		"包含 Warning 干扰前缀时自动剥离成功解析", func(t *testing.T) {
+			warningOutput := []byte("Warning: [minor] Fixed incorrect URI for schema\n" +
+				"Warning: [minor] Non-standard format string\n" +
+				`[{"SourceFile":"/path/to/img.nef","DateTimeOriginal":"2026:08:24 10:00:00"}]`)
+			res, err := ParseBatchMetadataJSON(warningOutput)
+			if err != nil {
+				t.Fatalf("带 Warning 前缀应成功解析，实际报错: %v", err)
+			}
+			if len(res) != 1 || res[0].DateTimeOriginal != "2026:08:24 10:00:00" {
+				t.Errorf("解析结果不匹配: %+v", res)
+			}
+		},
+	)
 
-	t.Run("非法 JSON 报错", func(t *testing.T) {
-		_, err := ParseBatchMetadataJSON([]byte(`invalid`))
-		if err == nil {
-			t.Fatal("期望报错，实际未报错")
-		}
-	})
+	t.Run(
+		"非法 JSON 报错", func(t *testing.T) {
+			_, err := ParseBatchMetadataJSON([]byte(`invalid`))
+			if err == nil {
+				t.Fatal("期望报错，实际未报错")
+			}
+		},
+	)
 }
 
 func TestParseMetadataJSON(t *testing.T) {
-	t.Run("空切片输出报错", func(t *testing.T) {
-		_, err := ParseMetadataJSON([]byte(`[]`))
-		if err == nil {
-			t.Fatal("期望空数组报错，实际未报错")
-		}
-	})
+	t.Run(
+		"空切片输出报错", func(t *testing.T) {
+			_, err := ParseMetadataJSON([]byte(`[]`))
+			if err == nil {
+				t.Fatal("期望空数组报错，实际未报错")
+			}
+		},
+	)
 
-	t.Run("非法 JSON 报错", func(t *testing.T) {
-		_, err := ParseMetadataJSON([]byte(`invalid-json`))
-		if err == nil {
-			t.Fatal("期望非法 JSON 报错，实际未报错")
-		}
-	})
+	t.Run(
+		"非法 JSON 报错", func(t *testing.T) {
+			_, err := ParseMetadataJSON([]byte(`invalid-json`))
+			if err == nil {
+				t.Fatal("期望非法 JSON 报错，实际未报错")
+			}
+		},
+	)
 }
 
 func TestClassifyFailure(t *testing.T) {
@@ -196,12 +215,14 @@ func TestClassifyFailure(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ClassifyFailure([]byte(tt.output), tt.err)
-			if got != tt.expected {
-				t.Errorf("ClassifyFailure() = %q; 期望 %q", got, tt.expected)
-			}
-		})
+		t.Run(
+			tt.name, func(t *testing.T) {
+				got := ClassifyFailure([]byte(tt.output), tt.err)
+				if got != tt.expected {
+					t.Errorf("ClassifyFailure() = %q; 期望 %q", got, tt.expected)
+				}
+			},
+		)
 	}
 }
 
@@ -223,7 +244,9 @@ func TestWriteGeotag(t *testing.T) {
 	if !strings.Contains(argsStr, "-geosync=+00:00:05") {
 		t.Errorf("缺少 -geosync 参数: %s", argsStr)
 	}
-	if !strings.Contains(argsStr, "-geotag /tracks/day1.gpx") || !strings.Contains(argsStr, "-geotag /tracks/day2.gpx") {
+	if !strings.Contains(argsStr, "-geotag /tracks/day1.gpx") || !strings.Contains(
+		argsStr, "-geotag /tracks/day2.gpx",
+	) {
 		t.Errorf("缺少 GPX 文件参数: %s", argsStr)
 	}
 	if !strings.HasSuffix(argsStr, rawPath) {
@@ -275,55 +298,67 @@ func TestSyncGPSToXMP(t *testing.T) {
 	}
 }
 
-func TestWriteLocation(t *testing.T) {
-	t.Run("空地理信息安全跳过", func(t *testing.T) {
-		runner := &mockCommandRunner{}
-		err := WriteLocation(runner, "/path/to/photo.JPG", domain.LocationInfo{})
-		if err != nil {
-			t.Fatalf("空地名信息应安全返回 nil: %v", err)
-		}
-		if runner.lastCommand != "" {
-			t.Errorf("空地名信息不应调用 exiftool 执行命令")
-		}
-	})
+func TestWriteLocationToMedia(t *testing.T) {
+	t.Run(
+		"空地理信息安全跳过", func(t *testing.T) {
+			runner := &mockCommandRunner{}
+			err := WriteLocationToMedia(runner, "/path/to/photo.JPG", domain.LocationInfo{})
+			if err != nil {
+				t.Fatalf("空地名信息应安全返回 nil: %v", err)
+			}
+			if runner.lastCommand != "" {
+				t.Errorf("空地名信息不应调用 exiftool 执行命令")
+			}
+		},
+	)
 
-	t.Run("完整写入国家省份城市与区县子地点", func(t *testing.T) {
-		runner := &mockCommandRunner{}
-		loc := domain.LocationInfo{
-			Country:     "中国",
-			CountryCode: "CN",
-			Province:    "山西省",
-			City:        "忻州市",
-			District:    "大南庄",
-		}
-		err := WriteLocation(runner, "/path/to/photo.JPG", loc)
-		if err != nil {
-			t.Fatalf("WriteLocation 出错: %v", err)
-		}
+	t.Run(
+		"完整写入国家省份城市与区县子地点", func(t *testing.T) {
+			runner := &mockCommandRunner{}
+			loc := domain.LocationInfo{
+				Country:     "中国",
+				CountryCode: "CN",
+				Province:    "山西省",
+				City:        "忻州市",
+				District:    "大南庄",
+			}
+			err := WriteLocationToMedia(runner, "/path/to/photo.JPG", loc)
+			if err != nil {
+				t.Fatalf("WriteLocationToMedia 出错: %v", err)
+			}
 
-		argsStr := strings.Join(runner.lastArgs, " ")
-		if !strings.Contains(argsStr, "-charset UTF8") || !strings.Contains(argsStr, "-codedcharacterset=utf8") {
-			t.Errorf("缺少 UTF-8 编码或 codedcharacterset 声明: %s", argsStr)
-		}
-		if !strings.Contains(argsStr, "-XMP-photoshop:Country=中国") || !strings.Contains(argsStr, "-IPTC:Country-PrimaryLocationName=中国") {
-			t.Errorf("国家字段写入不完整: %s", argsStr)
-		}
-		if !strings.Contains(argsStr, "-XMP-iptcCore:CountryCode=CN") || !strings.Contains(argsStr, "-IPTC:Country-PrimaryLocationCode=CHN") {
-			t.Errorf("国家代码写入不完整或未正确转换为 Alpha-3: %s", argsStr)
-		}
-		if !strings.Contains(argsStr, "-XMP-iptcExt:LocationCreatedCountryCode=CN") || !strings.Contains(argsStr, "-XMP-iptcExt:LocationShownCountryCode=CN") {
-			t.Errorf("IPTC Extension 国家代码写入不完整: %s", argsStr)
-		}
-		if !strings.Contains(argsStr, "-XMP-photoshop:State=山西省") {
-			t.Errorf("省份字段写入不完整: %s", argsStr)
-		}
-		if !strings.Contains(argsStr, "-XMP-photoshop:City=忻州市") {
-			t.Errorf("城市字段写入不完整: %s", argsStr)
-		}
-		if !strings.Contains(argsStr, "-XMP-iptcCore:Location=大南庄") || !strings.Contains(argsStr, "-IPTC:Sub-location=大南庄") {
-			t.Errorf("子位置/区县字段写入不完整: %s", argsStr)
-		}
-	})
+			argsStr := strings.Join(runner.lastArgs, " ")
+			if !strings.Contains(argsStr, "-charset UTF8") || !strings.Contains(argsStr, "-codedcharacterset=utf8") {
+				t.Errorf("缺少 UTF-8 编码或 codedcharacterset 声明: %s", argsStr)
+			}
+			if !strings.Contains(argsStr, "-XMP-photoshop:Country=中国") || !strings.Contains(
+				argsStr, "-IPTC:Country-PrimaryLocationName=中国",
+			) {
+				t.Errorf("国家字段写入不完整: %s", argsStr)
+			}
+			if !strings.Contains(argsStr, "-XMP-iptcCore:CountryCode=CN") || !strings.Contains(
+				argsStr, "-IPTC:Country-PrimaryLocationCode=CHN",
+			) {
+				t.Errorf("国家代码写入不完整或未正确转换为 Alpha-3: %s", argsStr)
+			}
+			if !strings.Contains(argsStr, "-XMP-iptcExt:LocationCreatedCountryCode=CN") || !strings.Contains(
+				argsStr, "-XMP-iptcExt:LocationShownCountryCode=CN",
+			) {
+				t.Errorf("IPTC Extension 国家代码写入不完整: %s", argsStr)
+			}
+			if !strings.Contains(argsStr, "-XMP-photoshop:State=山西省") {
+				t.Errorf("省份字段写入不完整: %s", argsStr)
+			}
+			if !strings.Contains(argsStr, "-XMP-photoshop:City=忻州市") {
+				t.Errorf("城市字段写入不完整: %s", argsStr)
+			}
+			if !strings.Contains(argsStr, "-XMP-iptcCore:Location=大南庄") || !strings.Contains(
+				argsStr, "-IPTC:Sub-location=大南庄",
+			) {
+				t.Errorf("子位置/区县字段写入不完整: %s", argsStr)
+			}
+		},
+	)
 }
 
 func TestSyncLocationToJPG(t *testing.T) {
@@ -340,7 +375,9 @@ func TestSyncLocationToJPG(t *testing.T) {
 	if !strings.Contains(argsStr, "-charset UTF8") || !strings.Contains(argsStr, "-codedcharacterset=utf8") {
 		t.Errorf("缺少 UTF-8 编码或 codedcharacterset 声明: %s", argsStr)
 	}
-	if !strings.Contains(argsStr, "-IPTC:all") || !strings.Contains(argsStr, "-XMP-photoshop:all") || !strings.Contains(argsStr, "-XMP-iptcCore:all") || !strings.Contains(argsStr, "-XMP-iptcExt:all") {
+	if !strings.Contains(argsStr, "-IPTC:all") || !strings.Contains(
+		argsStr, "-XMP-photoshop:all",
+	) || !strings.Contains(argsStr, "-XMP-iptcCore:all") || !strings.Contains(argsStr, "-XMP-iptcExt:all") {
 		t.Errorf("SyncLocationToJPG 缺少地名元数据标签: %s", argsStr)
 	}
 	if strings.Contains(argsStr, "-GPS:all") {
@@ -447,8 +484,66 @@ func TestWriteLocationToXMP(t *testing.T) {
 	if !strings.Contains(argsStr, "-XMP-iptcExt:LocationCreatedSublocation=吉利村") {
 		t.Errorf("缺少 LocationCreatedSublocation: %s", argsStr)
 	}
-	if !strings.Contains(argsStr, "-XMP-lr:HierarchicalSubject+=中国|广东省|潮州市|吉利村") {
-		t.Errorf("缺少 HierarchicalSubject 标签树: %s", argsStr)
+	if !strings.Contains(argsStr, "-XMP-lr:HierarchicalSubject=") || !strings.Contains(
+		argsStr, "-XMP-lr:HierarchicalSubject=中国|广东省|潮州市|吉利村",
+	) {
+		t.Errorf("缺少 HierarchicalSubject 原子清空与全量赋值标签树: %s", argsStr)
+	}
+	if strings.Contains(argsStr, "+=") {
+		t.Errorf("参数中严禁包含破坏幂等性的 += 语法: %s", argsStr)
+	}
+}
+
+func TestBuildLocationArgs_IdempotencyAndReset(t *testing.T) {
+	// 测试 1: 缺少区县时，必须包含显式置空指令，防止上一轮残留
+	locNoDistrict := domain.LocationInfo{
+		Country:  "中国",
+		Province: "山西省",
+		City:     "大同市",
+		District: "",
+	}
+	args := BuildLocationArgs(locNoDistrict)
+	argsStr := strings.Join(args, " ")
+
+	if !strings.Contains(argsStr, "-IPTC:Sub-location=") || !strings.Contains(argsStr, "-XMP-iptcCore:Location=") {
+		t.Errorf("空区县必须显式置空: %s", argsStr)
+	}
+	if !strings.Contains(argsStr, "-XMP-iptcExt:LocationCreatedSublocation=") || !strings.Contains(
+		argsStr, "-XMP-iptcExt:LocationShownSublocation=",
+	) {
+		t.Errorf("空区县必须显式置空 IPTC Extension: %s", argsStr)
+	}
+	if strings.Contains(argsStr, "+=") {
+		t.Errorf("严禁使用 += 语法: %s", argsStr)
+	}
+
+	// 测试 2: 带有旧标签增量清洗合并时的原子参数
+	existing := domain.ExistingTags{
+		HierarchicalSubject: []string{"中国|北京市|东城区|天安门/故宫", "题材|人像|扫街"},
+		Subject:             []string{"人像", "大光圈", "北京市", "东城区", "天安门/故宫"},
+		Keywords:            []string{"人像", "大光圈", "北京市", "东城区", "天安门/故宫"},
+	}
+	locNew := domain.LocationInfo{
+		Country:  "中国",
+		Province: "山西省",
+		City:     "大同市",
+		District: "城区",
+	}
+	cleaned := domain.CleanAndMergeLocationTags(existing, locNew)
+	argsCleaned := BuildLocationArgsWithTags(locNew, cleaned)
+	argsCleanedStr := strings.Join(argsCleaned, " ")
+
+	if strings.Contains(argsCleanedStr, "天安门/故宫") {
+		t.Errorf("清洗后参数中不应包含旧地名: %s", argsCleanedStr)
+	}
+	if !strings.Contains(argsCleanedStr, "-XMP-lr:HierarchicalSubject=题材|人像|扫街") {
+		t.Errorf("应完整保留摄影师自定义标签树: %s", argsCleanedStr)
+	}
+	if !strings.Contains(argsCleanedStr, "-XMP-lr:HierarchicalSubject=中国|山西省|大同市|城区") {
+		t.Errorf("应包含新地理分层标签树: %s", argsCleanedStr)
+	}
+	if !strings.Contains(argsCleanedStr, "-XMP-dc:subject=人像") {
+		t.Errorf("应保留摄影师自定义关键词: %s", argsCleanedStr)
 	}
 }
 
@@ -515,30 +610,33 @@ func TestParseCoordinates(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			lat, lon, err := ParseCoordinates(tt.input)
-			if tt.shouldErr {
-				if err == nil {
-					t.Fatalf("ParseCoordinates(%q) 期望报错，实际未报错", tt.input)
+		t.Run(
+			tt.name, func(t *testing.T) {
+				lat, lon, err := ParseCoordinates(tt.input)
+				if tt.shouldErr {
+					if err == nil {
+						t.Fatalf("ParseCoordinates(%q) 期望报错，实际未报错", tt.input)
+					}
+					return
 				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("ParseCoordinates(%q) 出错: %v", tt.input, err)
-			}
-			if math.Abs(lat-tt.expectedLat) > 0.001 {
-				t.Errorf("Lat = %f; 期望 %f", lat, tt.expectedLat)
-			}
-			if math.Abs(lon-tt.expectedLon) > 0.001 {
-				t.Errorf("Lon = %f; 期望 %f", lon, tt.expectedLon)
-			}
-		})
+				if err != nil {
+					t.Fatalf("ParseCoordinates(%q) 出错: %v", tt.input, err)
+				}
+				if math.Abs(lat-tt.expectedLat) > 0.001 {
+					t.Errorf("Lat = %f; 期望 %f", lat, tt.expectedLat)
+				}
+				if math.Abs(lon-tt.expectedLon) > 0.001 {
+					t.Errorf("Lon = %f; 期望 %f", lon, tt.expectedLon)
+				}
+			},
+		)
 	}
 }
 
 func TestInspectPhotoMetadata(t *testing.T) {
-	t.Run("完整解析相机与曝光参数与GPS", func(t *testing.T) {
-		jsonOutput := []byte(`[{
+	t.Run(
+		"完整解析相机与曝光参数与GPS", func(t *testing.T) {
+			jsonOutput := []byte(`[{
 			"SourceFile": "/photos/DSC_8021.NEF",
 			"File:FileSize": "45.2 MB",
 			"File:FileModifyDate": "2026:08:25 10:00:00+08:00",
@@ -560,44 +658,112 @@ func TestInspectPhotoMetadata(t *testing.T) {
 			"XMP:Location": "外滩"
 		}]`)
 
-		runner := &mockCommandRunner{output: jsonOutput}
-		meta, err := InspectPhotoMetadata(runner, "/photos/DSC_8021.NEF")
-		if err != nil {
-			t.Fatalf("InspectPhotoMetadata 报错: %v", err)
-		}
+			runner := &mockCommandRunner{output: jsonOutput}
+			meta, err := InspectPhotoMetadata(runner, "/photos/DSC_8021.NEF")
+			if err != nil {
+				t.Fatalf("InspectPhotoMetadata 报错: %v", err)
+			}
 
-		if meta.CameraMake != "NIKON CORPORATION" {
-			t.Errorf("CameraMake 不匹配: %s", meta.CameraMake)
-		}
-		if meta.CameraModel != "NIKON Z 8" {
-			t.Errorf("CameraModel 不匹配: %s", meta.CameraModel)
-		}
-		if meta.LensModel != "NIKKOR Z 24-70mm f/2.8 S" {
-			t.Errorf("LensModel 不匹配: %s", meta.LensModel)
-		}
-		if meta.ExposureTime != "1/250" {
-			t.Errorf("ExposureTime 不匹配: %s", meta.ExposureTime)
-		}
-		if meta.FNumber != "2.8" {
-			t.Errorf("FNumber 不匹配: %s", meta.FNumber)
-		}
-		if meta.ISO != "100" {
-			t.Errorf("ISO 不匹配: %s", meta.ISO)
-		}
-		if meta.FocalLength != "35" {
-			t.Errorf("FocalLength 不匹配: %s", meta.FocalLength)
-		}
-		if meta.Latitude == nil || *meta.Latitude != 31.2304 {
-			t.Errorf("Latitude 不匹配: %v", meta.Latitude)
-		}
-		if meta.Longitude == nil || *meta.Longitude != 121.4737 {
-			t.Errorf("Longitude 不匹配: %v", meta.Longitude)
-		}
-		if meta.Country != "中国" || meta.District != "外滩" {
-			t.Errorf("Location 不匹配: %s %s", meta.Country, meta.District)
-		}
-		if len(meta.RawTags) == 0 {
-			t.Errorf("RawTags 期望非空")
-		}
-	})
+			if meta.CameraMake != "NIKON CORPORATION" {
+				t.Errorf("CameraMake 不匹配: %s", meta.CameraMake)
+			}
+			if meta.CameraModel != "NIKON Z 8" {
+				t.Errorf("CameraModel 不匹配: %s", meta.CameraModel)
+			}
+			if meta.LensModel != "NIKKOR Z 24-70mm f/2.8 S" {
+				t.Errorf("LensModel 不匹配: %s", meta.LensModel)
+			}
+			if meta.ExposureTime != "1/250" {
+				t.Errorf("ExposureTime 不匹配: %s", meta.ExposureTime)
+			}
+			if meta.FNumber != "2.8" {
+				t.Errorf("FNumber 不匹配: %s", meta.FNumber)
+			}
+			if meta.ISO != "100" {
+				t.Errorf("ISO 不匹配: %s", meta.ISO)
+			}
+			if meta.FocalLength != "35" {
+				t.Errorf("FocalLength 不匹配: %s", meta.FocalLength)
+			}
+			if meta.Latitude == nil || *meta.Latitude != 31.2304 {
+				t.Errorf("Latitude 不匹配: %v", meta.Latitude)
+			}
+			if meta.Longitude == nil || *meta.Longitude != 121.4737 {
+				t.Errorf("Longitude 不匹配: %v", meta.Longitude)
+			}
+			if meta.Country != "中国" || meta.District != "外滩" {
+				t.Errorf("Location 不匹配: %s %s", meta.Country, meta.District)
+			}
+			if len(meta.RawTags) == 0 {
+				t.Errorf("RawTags 期望非空")
+			}
+		},
+	)
+}
+
+func TestCloneAllGPSMetadata(t *testing.T) {
+	runner := &mockCommandRunner{
+		output: []byte("1 image files updated"),
+	}
+	err := CloneAllGPSMetadata(runner, "/source/DSC_0001.NEF", "/target/DSC_0002.NEF")
+	if err != nil {
+		t.Fatalf("期望克隆成功，但报错: %v", err)
+	}
+	if len(runner.lastArgs) < 4 || runner.lastArgs[2] != "-TagsFromFile" || runner.lastArgs[4] != "-GPS:all" {
+		t.Fatalf("期望包含 -TagsFromFile 与 -GPS:all 参数，实际: %v", runner.lastArgs)
+	}
+}
+
+func TestWritePhotoGPSDirectly(t *testing.T) {
+	t.Run(
+		"参数为空报错", func(t *testing.T) {
+			runner := &mockCommandRunner{}
+			err := WritePhotoGPSDirectly(
+				runner, "", "", 31.23, 121.47, 10.0, domain.GPSProvenance{}, domain.PolicySmart,
+			)
+			if err == nil {
+				t.Fatal("期望空路径报错，但得到 nil")
+			}
+		},
+	)
+
+	t.Run(
+		"文件不存在报错", func(t *testing.T) {
+			runner := &mockCommandRunner{}
+			err := WritePhotoGPSDirectly(
+				runner, "", "/not/exist/photo.jpg", 31.23, 121.47, 10.0, domain.GPSProvenance{}, domain.PolicySmart,
+			)
+			if err == nil {
+				t.Fatal("期望不存在文件报错，但得到 nil")
+			}
+		},
+	)
+
+	t.Run(
+		"二次校验失败时报错", func(t *testing.T) {
+			tmpFile := t.TempDir() + "/sample.jpg"
+			_ = os.WriteFile(tmpFile, []byte("fake image"), 0644)
+			runner := &mockCommandRunner{output: []byte("")} // 返回空表示未读到 GPSPosition
+			err := WritePhotoGPSDirectly(
+				runner, "", tmpFile, 31.23, 121.47, 10.0, domain.GPSProvenance{}, domain.PolicySmart,
+			)
+			if err == nil {
+				t.Fatal("期望二次校验失败报错，但得到 nil")
+			}
+		},
+	)
+
+	t.Run(
+		"二次校验成功通过", func(t *testing.T) {
+			tmpFile := t.TempDir() + "/sample.jpg"
+			_ = os.WriteFile(tmpFile, []byte("fake image"), 0644)
+			runner := &mockCommandRunner{output: []byte("31.230000 N, 121.470000 E")}
+			err := WritePhotoGPSDirectly(
+				runner, "", tmpFile, 31.23, 121.47, 10.0, domain.GPSProvenance{}, domain.PolicySmart,
+			)
+			if err != nil {
+				t.Fatalf("期望写入及校验成功，但报错: %v", err)
+			}
+		},
+	)
 }

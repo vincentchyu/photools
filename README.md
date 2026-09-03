@@ -88,7 +88,17 @@ Metadata (Embedded in EXIF / IPTC / XMP):
 
 ## 🍏 photools for macOS (Native Desktop App)
 
-photools comes with a sleek, native macOS desktop application built with SwiftUI and high-performance in-process engine direct call (`libphotools.dylib`, sub-millisecond response).
+photools comes with a sleek, native macOS desktop application built with SwiftUI and high-performance in-process engine
+direct call (`libphotools.dylib`, sub-millisecond response):
+
+- ⌨️ **Keyboard-Driven QuickLook Inspection**: Press **`Space`** to instantly trigger macOS native QuickLook full-size
+  preview. Seamlessly browse through photos using **`↑ / ↓`** arrow keys with synchronized list auto-scrolling;
+- 📁 **Archive Drill-Down & Arctic Frost Protection**: Explore the `Processed/YYYY/MMDD/` directory hierarchy with
+  breadcrumb navigation or flat mode. Archived photos feature the "Arctic Frost" frozen read-only UI theme to prevent
+  accidental modifications;
+- 🛡️ **Persistent Status Bar Policy Central**: Keep track of the active sidecar policy (`smart` / `sidecar_only` /
+  `embed_and_sidecar` / `embed_only`) in the bottom status bar with instant switching and explicit raw file protection
+  levels.
 
 <p align="center">
   <a href="https://github.com/vincentchyu/photools/releases/latest">
@@ -136,6 +146,9 @@ photools comes with a sleek, native macOS desktop application built with SwiftUI
 3. **📍 Offline 5-Tier Reverse Geocoding (`reverse_geocode`)**
    - Powered by a 3D KD-Tree spatial index with offline geographic databases (e.g. 715k+ POIs).
    - Injects standardized Country, State/Province, City, District, and Scenic Spot / POI metadata directly into IPTC/XMP tags (100% offline, privacy-first).
+   - **Absolute Idempotency & Tag Sanitization**: Employs atomic reset and complete re-write to eliminate duplicate tags
+     (`+=`). Safely strips legacy location trees while **100% preserving photographer custom tags and keywords** (e.g.
+     Portrait, Street), preventing stitched/corrupted location history.
 4. **📅 Date-Based Atomic Archiving (`date_archive`)**
    - Extracts genuine `DateTimeOriginal`, standardizes filenames to `YYYY-MM-DD-basename`, and safely moves paired photo units into organized `Processed/YYYY/MMDD/` folders.
 
